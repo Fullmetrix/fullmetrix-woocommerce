@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Fullmetrix Reporting, Analytics & Marketing for WooCommerce
  * Description: Connect your WooCommerce store to Fullmetrix to sync your orders, customers, and products.
- * Version: 1.10.0
+ * Version: 1.10.1
  * Author: Fullmetrix
  * Author URI: https://fullmetrix.com
  * License: GPL v2 or later
@@ -18,7 +18,7 @@
 
 defined('ABSPATH') || exit;
 
-define('FULLMETRIX_VERSION', '1.10.0');
+define('FULLMETRIX_VERSION', '1.10.1');
 define('FULLMETRIX_CART_PARAM', 'fm_cart_id');
 define('FULLMETRIX_CART_MAX_ITEMS', 25);
 define('FULLMETRIX_CART_RESOLVE_TIMEOUT', 1.5);
@@ -50,6 +50,7 @@ if (!class_exists('Fullmetrix_Connector')) {
         }
 
         private function includes() {
+            require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-logger.php';
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-http.php';
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-admin.php';
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-api.php';

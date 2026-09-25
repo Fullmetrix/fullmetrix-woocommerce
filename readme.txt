@@ -4,7 +4,7 @@ Tags: woocommerce, woocommerce analytics, woocommerce reports, ecommerce analyti
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.10.0
+Stable tag: 1.10.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -135,6 +135,9 @@ The plugin connects your WooCommerce store to the Fullmetrix service at [fullmet
 
 == Changelog ==
 
+= 1.10.1 =
+* Fixed: the customer sync no longer stops on stores where many extensions link their own tables to customers
+
 = 1.10.0 =
 * Improved: order, product, customer and coupon updates are sent to Fullmetrix in the background through Action Scheduler instead of during the shopper's request
 * Improved: every call to Fullmetrix uses a short timeout and a circuit breaker that pauses calls for 5 minutes after repeated failures, with separate breakers for storefront calls, cart recovery links and background jobs
@@ -257,6 +260,9 @@ All communications use HTTPS and are authenticated with HMAC-SHA256 signatures. 
 This plugin connects your WooCommerce store to the Fullmetrix service ([fullmetrix.com](https://fullmetrix.com)). See the "External services" section above for full details on data transmission. See the [Fullmetrix Privacy Policy](https://fullmetrix.com/privacy) for more details.
 
 == Upgrade Notice ==
+
+= 1.10.1 =
+Fixes the customer sync on stores with many extensions linked to customers.
 
 = 1.10.0 =
 Store updates are now sent in the background and every call to Fullmetrix is time-limited, so the plugin cannot slow down your storefront. A full re-sync runs automatically after the update.

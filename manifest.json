@@ -1,5 +1,5 @@
 {
-  "version": "1.10.0",
+  "version": "1.10.1",
   "minimumRequired": "1.0.0",
-  "changelog": "Le module ne peut plus ralentir la boutique : les mises à jour partent en tâche de fond, chaque appel vers Fullmetrix est borné par un délai court et un disjoncteur, la configuration garde sa dernière version valide, et le coupon cadeau ne bloque plus le paiement quand le cadeau est en rupture."
+  "changelog": "La synchronisation des clients ne s'arrête plus sur les boutiques qui ont beaucoup d'extensions liées aux clients."
 }
