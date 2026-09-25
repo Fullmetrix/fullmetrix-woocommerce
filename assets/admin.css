@@ -1,0 +1,237 @@
+.fullmetrix-settings {
+    max-width: 760px;
+}
+
+.fullmetrix-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0 0;
+}
+
+.fullmetrix-brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 20px;
+}
+
+.fullmetrix-brand-logo {
+    width: 52px;
+    height: 52px;
+    border-radius: 13px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.fullmetrix-brand-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.fullmetrix-brand-name {
+    margin: 0;
+    padding: 0;
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #1a1a1a;
+}
+
+.fullmetrix-brand-tagline {
+    margin: 3px 0 0;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.fullmetrix-card-title {
+    margin: 0 0 16px;
+    padding: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+.fullmetrix-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.fullmetrix-pill-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.fullmetrix-pill-success {
+    background: #e8f6ee;
+    color: #1a8245;
+}
+
+.fullmetrix-pill-active {
+    background: #e7f0ff;
+    color: #2469fe;
+}
+
+.fullmetrix-pill-waiting {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.fullmetrix-steps {
+    list-style: none;
+    margin: 0 0 22px;
+    padding: 0;
+}
+
+.fullmetrix-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.fullmetrix-steps li:last-child {
+    margin-bottom: 0;
+}
+
+.fullmetrix-step-number {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: #2469fe;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fullmetrix-step-text {
+    padding-top: 2px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #333;
+}
+
+.fullmetrix-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.fullmetrix-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    margin: 0;
+}
+
+.fullmetrix-code-input {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    height: 52px;
+    padding: 0 16px;
+    border: 1px solid #dfe3e8;
+    border-radius: 8px;
+    background: #fff;
+    color: #333;
+    font-family: monospace;
+    font-size: 16px;
+    letter-spacing: 1px;
+}
+
+.fullmetrix-code-input:focus {
+    border-color: #2469fe;
+    box-shadow: 0 0 0 1px #2469fe;
+    outline: none;
+}
+
+.fullmetrix-code-input[readonly] {
+    background: #f8f9fa;
+}
+
+.fullmetrix-code-input[readonly]:focus {
+    border-color: #dfe3e8;
+    box-shadow: none;
+}
+
+.fullmetrix-btn {
+    height: 52px;
+    padding: 0 30px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.fullmetrix-btn-primary {
+    background: #2469fe;
+    border: 1px solid #2469fe;
+    color: #fff;
+}
+
+.fullmetrix-btn-primary:hover {
+    background: #173ae1;
+    border-color: #173ae1;
+}
+
+.fullmetrix-btn-secondary {
+    background: #fff;
+    border: 1px solid #dfe3e8;
+    color: #374151;
+    padding: 0 22px;
+    font-size: 14px;
+}
+
+.fullmetrix-btn-secondary:hover {
+    border-color: #c9cfd6;
+}
+
+.fullmetrix-tiles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.fullmetrix-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 80px;
+    padding: 10px 16px;
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+.fullmetrix-tile-count {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #1a1a1a;
+}
+
+.fullmetrix-tile-label {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}

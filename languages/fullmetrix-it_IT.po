@@ -1,0 +1,186 @@
+# Translation of Fullmetrix in Italian
+# Copyright (C) 2024 Fullmetrix
+# This file is distributed under the GPL v2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: Fullmetrix 1.1.0\n"
+"Report-Msgid-Bugs-To: https://fullmetrix.com/support\n"
+"POT-Creation-Date: 2026-04-07 00:00+0000\n"
+"PO-Revision-Date: 2026-04-07 00:00+0000\n"
+"Last-Translator: Fullmetrix <support@fullmetrix.com>\n"
+"Language-Team: Italian <it@li.org>\n"
+"Language: it_IT\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: fullmetrix.php:99
+msgid "Fullmetrix Connector requires WooCommerce to work."
+msgstr "Il connettore Fullmetrix richiede WooCommerce per funzionare."
+
+#: includes/class-fullmetrix-admin.php:9
+#: includes/class-fullmetrix-admin.php:10
+#: includes/class-fullmetrix-admin.php:74
+msgid "Fullmetrix"
+msgstr "Fullmetrix"
+
+#: includes/class-fullmetrix-admin.php:34
+msgid "Please enter a connection code."
+msgstr "Inserisci un codice di connessione."
+
+#: includes/class-fullmetrix-admin.php:37
+msgid "Invalid code format. The code must be in FMTX-XXXX-XXXX-XXXX format."
+msgstr "Formato del codice non valido. Il codice deve rispettare il formato FMTX-XXXX-XXXX-XXXX."
+
+#: includes/class-fullmetrix-admin.php:47
+msgid "Connection successful! Your store is now connected to Fullmetrix."
+msgstr "Connessione riuscita! Il tuo negozio è ora collegato a Fullmetrix."
+
+#: includes/class-fullmetrix-admin.php:66
+msgid "Successfully disconnected."
+msgstr "Disconnessione riuscita."
+
+#: includes/class-fullmetrix-admin.php:86
+msgid "Connection"
+msgstr "Connessione"
+
+#: includes/class-fullmetrix-admin.php:106
+msgid "Connected to Fullmetrix"
+msgstr "Connesso a Fullmetrix"
+
+#: includes/class-fullmetrix-admin.php:110
+msgid "Your store is connected and ready to sync orders with Fullmetrix."
+msgstr "Il tuo negozio è connesso e pronto per sincronizzare gli ordini con Fullmetrix."
+
+#: includes/class-fullmetrix-admin.php:114
+#: includes/class-fullmetrix-admin.php:140
+msgid "Connection code"
+msgstr "Codice di connessione"
+
+#: includes/class-fullmetrix-admin.php:121
+msgid "Disconnect"
+msgstr "Disconnetti"
+
+#: includes/class-fullmetrix-admin.php:128
+msgid "Not connected"
+msgstr "Non connesso"
+
+#: includes/class-fullmetrix-admin.php:132
+msgid "Enter the connection code provided by Fullmetrix to connect your store."
+msgstr "Inserisci il codice di connessione fornito da Fullmetrix per collegare il tuo negozio."
+
+#: includes/class-fullmetrix-admin.php:153
+msgid "Connect"
+msgstr "Connetti"
+
+#: includes/class-fullmetrix-admin.php:166
+msgid "Sync activity"
+msgstr "Attività di sincronizzazione"
+
+#. translators: %1$s: sync type label, %2$s: elapsed duration
+#: includes/class-fullmetrix-admin.php:181
+msgid "Sync in progress%1$s... (%2$s)"
+msgstr "Sincronizzazione in corso%1$s... (%2$s)"
+
+#: includes/class-fullmetrix-admin.php:189
+msgid "Fullmetrix is fetching your store data. This page refreshes automatically."
+msgstr "Fullmetrix sta recuperando i dati del tuo negozio. Questa pagina si aggiorna automaticamente."
+
+#. translators: %s: time ago string
+#: includes/class-fullmetrix-admin.php:199
+msgid "Last sync: %s"
+msgstr "Ultima sincronizzazione: %s"
+
+#. translators: %s: sync mode name
+#: includes/class-fullmetrix-admin.php:210
+msgid "Mode: %s"
+msgstr "Modalità: %s"
+
+#: includes/class-fullmetrix-admin.php:232
+msgid "Waiting for first sync"
+msgstr "In attesa della prima sincronizzazione"
+
+#: includes/class-fullmetrix-admin.php:235
+msgid "Start a sync from your Fullmetrix dashboard."
+msgstr "Avvia una sincronizzazione dalla tua dashboard Fullmetrix."
+
+#. translators: %s: number of export requests
+#: includes/class-fullmetrix-admin.php:244
+msgid "%s export requests processed in total"
+msgstr "%s richieste di esportazione elaborate in totale"
+
+#: includes/class-fullmetrix-admin.php:263
+msgid "just now"
+msgstr "proprio ora"
+
+#. translators: %d: number of minutes
+#: includes/class-fullmetrix-admin.php:268
+msgid "%d min ago"
+msgstr "%d min fa"
+
+#. translators: %d: number of hours
+#: includes/class-fullmetrix-admin.php:273
+msgid "%d h ago"
+msgstr "%d h fa"
+
+#. translators: %d: number of seconds
+#: includes/class-fullmetrix-admin.php:284
+msgid "%d sec"
+msgstr "%d sec"
+
+#. translators: %1$d: minutes, %2$d: seconds
+#: includes/class-fullmetrix-admin.php:290
+msgid "%1$d min %2$d sec"
+msgstr "%1$d min %2$d sec"
+
+#. translators: %1$d: hours, %2$d: minutes
+#: includes/class-fullmetrix-admin.php:296
+msgid "%1$d h %2$d min"
+msgstr "%1$d h %2$d min"
+
+#: includes/class-fullmetrix-api.php:50
+#: includes/class-fullmetrix-api.php:93
+msgid "Plugin not configured"
+msgstr "Estensione non configurata"
+
+#: includes/class-fullmetrix-api.php:62
+#: includes/class-fullmetrix-api.php:101
+msgid "Missing authentication headers"
+msgstr "Intestazioni di autenticazione mancanti"
+
+#: includes/class-fullmetrix-api.php:71
+#: includes/class-fullmetrix-api.php:106
+msgid "Invalid connection code"
+msgstr "Codice di connessione non valido"
+
+#: includes/class-fullmetrix-api.php:81
+#: includes/class-fullmetrix-api.php:114
+msgid "Invalid or expired signature"
+msgstr "Firma non valida o scaduta"
+
+#: includes/class-fullmetrix-api.php:702
+msgid "Connection code missing"
+msgstr "Codice di connessione mancante"
+
+#. translators: %s: error message
+#: includes/class-fullmetrix-api.php:722
+msgid "Connection error: %s"
+msgstr "Errore di connessione: %s"
+
+#: includes/class-fullmetrix-api.php:732
+msgid "Connection code not found. Check your code in Fullmetrix."
+msgstr "Codice di connessione non trovato. Verifica il tuo codice in Fullmetrix."
+
+#: includes/class-fullmetrix-api.php:736
+msgid "This code is already associated with another site."
+msgstr "Questo codice è già associato a un altro sito."
+
+#: includes/class-fullmetrix-api.php:740
+msgid "Unknown error"
+msgstr "Errore sconosciuto"
+
+#. translators: %s: error message
+#: includes/class-fullmetrix-api.php:742
+msgid "Registration failed: %s"
+msgstr "Registrazione non riuscita: %s"

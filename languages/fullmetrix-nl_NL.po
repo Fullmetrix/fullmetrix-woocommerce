@@ -1,0 +1,186 @@
+# Translation of Fullmetrix in Dutch
+# Copyright (C) 2024 Fullmetrix
+# This file is distributed under the GPL v2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: Fullmetrix 1.1.0\n"
+"Report-Msgid-Bugs-To: https://fullmetrix.com/support\n"
+"POT-Creation-Date: 2026-04-07 00:00+0000\n"
+"PO-Revision-Date: 2026-04-07 00:00+0000\n"
+"Last-Translator: Fullmetrix <support@fullmetrix.com>\n"
+"Language-Team: Dutch <nl@li.org>\n"
+"Language: nl_NL\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: fullmetrix.php:99
+msgid "Fullmetrix Connector requires WooCommerce to work."
+msgstr "De Fullmetrix-connector vereist WooCommerce om te werken."
+
+#: includes/class-fullmetrix-admin.php:9
+#: includes/class-fullmetrix-admin.php:10
+#: includes/class-fullmetrix-admin.php:74
+msgid "Fullmetrix"
+msgstr "Fullmetrix"
+
+#: includes/class-fullmetrix-admin.php:34
+msgid "Please enter a connection code."
+msgstr "Voer een verbindingscode in."
+
+#: includes/class-fullmetrix-admin.php:37
+msgid "Invalid code format. The code must be in FMTX-XXXX-XXXX-XXXX format."
+msgstr "Ongeldig codeformaat. De code moet het formaat FMTX-XXXX-XXXX-XXXX hebben."
+
+#: includes/class-fullmetrix-admin.php:47
+msgid "Connection successful! Your store is now connected to Fullmetrix."
+msgstr "Verbinding geslaagd! Je winkel is nu verbonden met Fullmetrix."
+
+#: includes/class-fullmetrix-admin.php:66
+msgid "Successfully disconnected."
+msgstr "Succesvol losgekoppeld."
+
+#: includes/class-fullmetrix-admin.php:86
+msgid "Connection"
+msgstr "Verbinding"
+
+#: includes/class-fullmetrix-admin.php:106
+msgid "Connected to Fullmetrix"
+msgstr "Verbonden met Fullmetrix"
+
+#: includes/class-fullmetrix-admin.php:110
+msgid "Your store is connected and ready to sync orders with Fullmetrix."
+msgstr "Je winkel is verbonden en klaar om bestellingen te synchroniseren met Fullmetrix."
+
+#: includes/class-fullmetrix-admin.php:114
+#: includes/class-fullmetrix-admin.php:140
+msgid "Connection code"
+msgstr "Verbindingscode"
+
+#: includes/class-fullmetrix-admin.php:121
+msgid "Disconnect"
+msgstr "Loskoppelen"
+
+#: includes/class-fullmetrix-admin.php:128
+msgid "Not connected"
+msgstr "Niet verbonden"
+
+#: includes/class-fullmetrix-admin.php:132
+msgid "Enter the connection code provided by Fullmetrix to connect your store."
+msgstr "Voer de verbindingscode in die door Fullmetrix is verstrekt om je winkel te koppelen."
+
+#: includes/class-fullmetrix-admin.php:153
+msgid "Connect"
+msgstr "Verbinden"
+
+#: includes/class-fullmetrix-admin.php:166
+msgid "Sync activity"
+msgstr "Synchronisatie-activiteit"
+
+#. translators: %1$s: sync type label, %2$s: elapsed duration
+#: includes/class-fullmetrix-admin.php:181
+msgid "Sync in progress%1$s... (%2$s)"
+msgstr "Synchronisatie bezig%1$s... (%2$s)"
+
+#: includes/class-fullmetrix-admin.php:189
+msgid "Fullmetrix is fetching your store data. This page refreshes automatically."
+msgstr "Fullmetrix haalt de gegevens van je winkel op. Deze pagina wordt automatisch vernieuwd."
+
+#. translators: %s: time ago string
+#: includes/class-fullmetrix-admin.php:199
+msgid "Last sync: %s"
+msgstr "Laatste synchronisatie: %s"
+
+#. translators: %s: sync mode name
+#: includes/class-fullmetrix-admin.php:210
+msgid "Mode: %s"
+msgstr "Modus: %s"
+
+#: includes/class-fullmetrix-admin.php:232
+msgid "Waiting for first sync"
+msgstr "Wachten op eerste synchronisatie"
+
+#: includes/class-fullmetrix-admin.php:235
+msgid "Start a sync from your Fullmetrix dashboard."
+msgstr "Start een synchronisatie vanuit je Fullmetrix-dashboard."
+
+#. translators: %s: number of export requests
+#: includes/class-fullmetrix-admin.php:244
+msgid "%s export requests processed in total"
+msgstr "%s exportverzoeken in totaal verwerkt"
+
+#: includes/class-fullmetrix-admin.php:263
+msgid "just now"
+msgstr "zojuist"
+
+#. translators: %d: number of minutes
+#: includes/class-fullmetrix-admin.php:268
+msgid "%d min ago"
+msgstr "%d min geleden"
+
+#. translators: %d: number of hours
+#: includes/class-fullmetrix-admin.php:273
+msgid "%d h ago"
+msgstr "%d u geleden"
+
+#. translators: %d: number of seconds
+#: includes/class-fullmetrix-admin.php:284
+msgid "%d sec"
+msgstr "%d sec"
+
+#. translators: %1$d: minutes, %2$d: seconds
+#: includes/class-fullmetrix-admin.php:290
+msgid "%1$d min %2$d sec"
+msgstr "%1$d min %2$d sec"
+
+#. translators: %1$d: hours, %2$d: minutes
+#: includes/class-fullmetrix-admin.php:296
+msgid "%1$d h %2$d min"
+msgstr "%1$d u %2$d min"
+
+#: includes/class-fullmetrix-api.php:50
+#: includes/class-fullmetrix-api.php:93
+msgid "Plugin not configured"
+msgstr "Plugin niet geconfigureerd"
+
+#: includes/class-fullmetrix-api.php:62
+#: includes/class-fullmetrix-api.php:101
+msgid "Missing authentication headers"
+msgstr "Ontbrekende authenticatie-headers"
+
+#: includes/class-fullmetrix-api.php:71
+#: includes/class-fullmetrix-api.php:106
+msgid "Invalid connection code"
+msgstr "Ongeldige verbindingscode"
+
+#: includes/class-fullmetrix-api.php:81
+#: includes/class-fullmetrix-api.php:114
+msgid "Invalid or expired signature"
+msgstr "Ongeldige of verlopen handtekening"
+
+#: includes/class-fullmetrix-api.php:702
+msgid "Connection code missing"
+msgstr "Verbindingscode ontbreekt"
+
+#. translators: %s: error message
+#: includes/class-fullmetrix-api.php:722
+msgid "Connection error: %s"
+msgstr "Verbindingsfout: %s"
+
+#: includes/class-fullmetrix-api.php:732
+msgid "Connection code not found. Check your code in Fullmetrix."
+msgstr "Verbindingscode niet gevonden. Controleer je code in Fullmetrix."
+
+#: includes/class-fullmetrix-api.php:736
+msgid "This code is already associated with another site."
+msgstr "Deze code is al gekoppeld aan een andere site."
+
+#: includes/class-fullmetrix-api.php:740
+msgid "Unknown error"
+msgstr "Onbekende fout"
+
+#. translators: %s: error message
+#: includes/class-fullmetrix-api.php:742
+msgid "Registration failed: %s"
+msgstr "Registratie mislukt: %s"
