@@ -6,6 +6,7 @@ defined('ABSPATH') || exit;
 class Fullmetrix_Fast_Stream_Exporter {
 
     const TAX_LOCATION_PRIORITY = -1000;
+    const MAX_QUERY_FAILURES = 3;
 
     private $wpdb;
     private $related_tables_cache = array();
@@ -271,10 +272,16 @@ class Fullmetrix_Fast_Stream_Exporter {
                     $count = $this->stream_subscriptions_fast($sync_type, $since, $from_id);
                     break;
             }
+        } catch (Fullmetrix_Stream_Aborted $e) {
+            exit;
         } catch (Exception $e) {
             $this->send_line(array('type' => 'error', 'entity' => $entity, 'message' => 'Exception: ' . $e->getMessage()));
+            $this->send_line(array('type' => 'fatal', 'entity' => $entity, 'reason' => 'exception'));
+            exit;
         } catch (Error $e) {
             $this->send_line(array('type' => 'error', 'entity' => $entity, 'message' => 'Fatal: ' . $e->getMessage()));
+            $this->send_line(array('type' => 'fatal', 'entity' => $entity, 'reason' => 'exception'));
+            exit;
         }
 
         $this->send_line(array(
@@ -343,6 +350,8 @@ class Fullmetrix_Fast_Stream_Exporter {
                     return $this->stream_orders_legacy($sync_type, $since, $from_id);
                 }
                 return $count;
+            } catch (Fullmetrix_Stream_Aborted $e) {
+                throw $e;
             } catch (Exception $e) {
                 $this->send_line(array(
                     'type' => 'warning',
@@ -368,6 +377,7 @@ class Fullmetrix_Fast_Stream_Exporter {
         $start_time = microtime(true);
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
         $batch_number = 0;
         $batch_size = $this->orders_per_page;
         $orders_table = $this->wpdb->prefix . 'wc_orders';
@@ -450,18 +460,15 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'orders', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-            }
-
-            if ($rows === null) {
-                $last_id = $this->find_next_id_asc($orders_table, 'id', $last_id, " AND type = 'shop_order'");
-                // `find_next_id_asc` rend PHP_INT_MAX quand la table est epuisee, et
-                // 0 n'est plus une sentinelle depuis le passage en parcours croissant :
-                // sans ce test la boucle repart indefiniment sur une base injoignable.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                if (++$failures >= self::MAX_QUERY_FAILURES && $count === 0) {
+                    return 0;
+                }
+                $this->retry_or_abort('orders', $failures, $last_id, $count);
+                $batch_size = self::halved_batch($batch_size);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) break;
 
             $order_ids = wp_list_pluck($rows, 'id');
@@ -571,6 +578,7 @@ class Fullmetrix_Fast_Stream_Exporter {
         $start_time = microtime(true);
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
         $batch_number = 0;
         $batch_size = $this->orders_per_page;
 
@@ -623,15 +631,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'orders', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->posts, 'ID', $last_id, " AND post_type = 'shop_order'");
-                // `find_next_id_asc` rend PHP_INT_MAX quand la table est epuisee, et
-                // 0 n'est plus une sentinelle depuis le passage en parcours croissant :
-                // sans ce test la boucle repart indefiniment sur une base injoignable.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('orders', ++$failures, $last_id, $count);
+                $batch_size = self::halved_batch($batch_size);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) break;
 
             $order_ids = wp_list_pluck($rows, 'ID');
@@ -902,11 +907,7 @@ class Fullmetrix_Fast_Stream_Exporter {
         $placeholders = implode(',', array_fill(0, count(self::$related_table_denylist), '%s'));
         // phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
-            "SELECT c.TABLE_NAME AS table_name, MIN(k.COLUMN_NAME) AS pk_column,
-                    GROUP_CONCAT(
-                        CASE WHEN c.DATA_TYPE IN ('blob','mediumblob','longblob','tinyblob','binary','varbinary')
-                             THEN NULL ELSE c.COLUMN_NAME END
-                    ) AS safe_columns
+            "SELECT c.TABLE_NAME AS table_name, MIN(k.COLUMN_NAME) AS pk_column
              FROM information_schema.COLUMNS c
              LEFT JOIN information_schema.KEY_COLUMN_USAGE k
                     ON (k.TABLE_SCHEMA = c.TABLE_SCHEMA AND k.TABLE_NAME = c.TABLE_NAME
@@ -934,8 +935,26 @@ class Fullmetrix_Fast_Stream_Exporter {
             foreach ($rows as $row) {
                 $tables[$row['table_name']] = array(
                     'pk' => (string) ($row['pk_column'] ?? ''),
-                    'columns' => array_values(array_filter(explode(',', (string) ($row['safe_columns'] ?? '')))),
+                    'columns' => array(),
                 );
+            }
+        }
+        if (!empty($tables)) {
+            $names = array_keys($tables);
+            // phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $columns = $this->wpdb->get_results($this->wpdb->prepare(
+                "SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME IN (" . implode(',', array_fill(0, count($names), '%s')) . ")
+                   AND DATA_TYPE NOT IN ('blob','mediumblob','longblob','tinyblob','binary','varbinary')
+                 ORDER BY TABLE_NAME, ORDINAL_POSITION",
+                $names
+            ), ARRAY_A);
+            foreach (is_array($columns) ? $columns : array() as $column) {
+                if (isset($tables[$column['table_name']])) {
+                    $tables[$column['table_name']]['columns'][] = $column['column_name'];
+                }
             }
         }
         if (count($tables) >= self::MAX_RELATED_TABLES) {
@@ -1020,15 +1039,18 @@ class Fullmetrix_Fast_Stream_Exporter {
                 continue;
             }
             $short = substr($table, strlen($this->wpdb->prefix));
-            $where = "`{$fk_column}` IN ({$id_list})";
+            $from = "`{$safe_table}` fm_row";
+            $order = "fm_row.`{$fk_column}`";
             if ($pk_column !== '' && $pk_column !== $fk_column) {
-                $where = "(`{$fk_column}`, `{$pk_column}`) IN ("
-                    . "SELECT `{$fk_column}`, MAX(`{$pk_column}`) FROM `{$safe_table}`"
-                    . " WHERE `{$fk_column}` IN ({$id_list}) GROUP BY `{$fk_column}`)";
+                $from .= " INNER JOIN ("
+                    . "SELECT `{$fk_column}` AS fm_fk, MAX(`{$pk_column}`) AS fm_pk FROM `{$safe_table}`"
+                    . " WHERE `{$fk_column}` IN ({$id_list}) GROUP BY `{$fk_column}`) fm_last"
+                    . " ON (fm_row.`{$fk_column}` = fm_last.fm_fk AND fm_row.`{$pk_column}` = fm_last.fm_pk)";
+                $order .= ", fm_row.`{$pk_column}`";
             }
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $select = 'fm_row.' . str_replace(', `', ', fm_row.`', $select);
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- identifiants valides par escape_identifier, liste blanche [A-Za-z0-9_], et identifiants d'entites entiers
-            $rows = $this->wpdb->get_results("SELECT {$select} FROM `{$safe_table}` WHERE {$where}", ARRAY_A);
+            $rows = $this->wpdb->get_results("SELECT {$select} FROM {$from} WHERE fm_row.`{$fk_column}` IN ({$id_list}) ORDER BY {$order}", ARRAY_A);
             if (!is_array($rows)) {
                 continue;
             }
@@ -1402,6 +1424,8 @@ class Fullmetrix_Fast_Stream_Exporter {
                     return $this->stream_refunds_legacy($sync_type, $since, $from_id);
                 }
                 return $count;
+            } catch (Fullmetrix_Stream_Aborted $e) {
+                throw $e;
             } catch (Exception $e) {
                 $this->has_hpos = false;
                 return $this->stream_refunds_legacy($sync_type, $since, $from_id);
@@ -1416,6 +1440,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_refunds_hpos($sync_type = 'full', $since = null, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
         $orders_table = $this->wpdb->prefix . 'wc_orders';
 
         $since_where = '';
@@ -1438,15 +1463,15 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'refunds', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($orders_table, 'id', $last_id, " AND type = 'shop_order_refund'");
-                // `find_next_id_asc` rend PHP_INT_MAX quand la table est epuisee, et
-                // 0 n'est plus une sentinelle depuis le passage en parcours croissant :
-                // sans ce test la boucle repart indefiniment sur une base injoignable.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                if (++$failures >= self::MAX_QUERY_FAILURES && $count === 0) {
+                    return 0;
+                }
+                $this->retry_or_abort('refunds', $failures, $last_id, $count);
+                $this->per_page = self::halved_batch($this->per_page);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) {
                 break;
             }
@@ -1506,6 +1531,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_refunds_legacy($sync_type = 'full', $since = null, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
 
         $since_where = '';
         if ($sync_type === 'incremental' && $since) {
@@ -1527,15 +1553,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'refunds', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->posts, 'ID', $last_id, " AND post_type = 'shop_order_refund'");
-                // `find_next_id_asc` rend PHP_INT_MAX quand la table est epuisee, et
-                // 0 n'est plus une sentinelle depuis le passage en parcours croissant :
-                // sans ce test la boucle repart indefiniment sur une base injoignable.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('refunds', ++$failures, $last_id, $count);
+                $this->per_page = self::halved_batch($this->per_page);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) {
                 break;
             }
@@ -1595,6 +1618,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_customers_fast($sync_type = 'full', $since = null, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
 
         $since_where = '';
         if ($sync_type === 'incremental' && $since) {
@@ -1615,13 +1639,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'customers', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->users, 'ID', $last_id);
-                // Base injoignable : sans sortie, la meme requete repartirait sans fin.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('customers', ++$failures, $last_id, $count);
+                $this->per_page = self::halved_batch($this->per_page);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) {
                 break;
             }
@@ -1794,6 +1817,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_products_fast($sync_type = 'full', $since = null, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
 
         $since_where = '';
         if ($sync_type === 'incremental' && $since) {
@@ -1818,13 +1842,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'products', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->posts, 'ID', $last_id, " AND post_type IN ('product','product_variation')");
-                // Base injoignable : sans sortie, la meme requete repartirait sans fin.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('products', ++$failures, $last_id, $count);
+                $this->per_page = self::halved_batch($this->per_page);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) {
                 break;
             }
@@ -2138,6 +2161,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_categories_fast($from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
 
         do {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
@@ -2154,13 +2178,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'categories', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->terms, 'term_id', $last_id);
-                // Base injoignable : sans sortie, la meme requete repartirait sans fin.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('categories', ++$failures, $last_id, $count);
+                $this->per_page = self::halved_batch($this->per_page);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) {
                 break;
             }
@@ -2233,6 +2256,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_coupons_fast($sync_type = 'full', $since = null, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
 
         $since_where = '';
         if ($sync_type === 'incremental' && $since) {
@@ -2254,13 +2278,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'coupons', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->posts, 'ID', $last_id, " AND post_type = 'shop_coupon'");
-                // Base injoignable : sans sortie, la meme requete repartirait sans fin.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('coupons', ++$failures, $last_id, $count);
+                $this->per_page = self::halved_batch($this->per_page);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) {
                 break;
             }
@@ -2353,6 +2376,8 @@ class Fullmetrix_Fast_Stream_Exporter {
                     return $this->stream_subscriptions_legacy($sync_type, $since, $from_id);
                 }
                 return $count;
+            } catch (Fullmetrix_Stream_Aborted $e) {
+                throw $e;
             } catch (Exception $e) {
                 $this->send_line(array(
                     'type' => 'warning',
@@ -2375,6 +2400,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_subscriptions_hpos($sync_type, $since, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
         $batch_size = $this->orders_per_page;
         $orders_table = $this->wpdb->prefix . 'wc_orders';
         $addresses_table = $this->wpdb->prefix . 'wc_order_addresses';
@@ -2434,15 +2460,15 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'subscriptions', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($orders_table, 'id', $last_id, " AND type = 'shop_subscription'");
-                // `find_next_id_asc` rend PHP_INT_MAX quand la table est epuisee, et
-                // 0 n'est plus une sentinelle depuis le passage en parcours croissant :
-                // sans ce test la boucle repart indefiniment sur une base injoignable.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                if (++$failures >= self::MAX_QUERY_FAILURES && $count === 0) {
+                    return 0;
+                }
+                $this->retry_or_abort('subscriptions', $failures, $last_id, $count);
+                $batch_size = self::halved_batch($batch_size);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) break;
 
             $sub_ids = wp_list_pluck($rows, 'id');
@@ -2542,6 +2568,7 @@ class Fullmetrix_Fast_Stream_Exporter {
     private function stream_subscriptions_legacy($sync_type, $since, $from_id = 0) {
         $count = 0;
         $last_id = (int) $from_id;
+        $failures = 0;
         $batch_size = $this->orders_per_page;
 
         $base_where = "WHERE p.post_type = 'shop_subscription' AND p.post_status NOT IN ('trash', 'auto-draft')";
@@ -2576,15 +2603,12 @@ class Fullmetrix_Fast_Stream_Exporter {
                 )
             );
 
-            if ($rows === null && $this->wpdb->last_error) {
-                $this->send_line(array('type' => 'error', 'entity' => 'subscriptions', 'message' => 'SQL error: ' . $this->wpdb->last_error));
-                $last_id = $this->find_next_id_asc($this->wpdb->posts, 'ID', $last_id, " AND post_type = 'shop_subscription'");
-                // `find_next_id_asc` rend PHP_INT_MAX quand la table est epuisee, et
-                // 0 n'est plus une sentinelle depuis le passage en parcours croissant :
-                // sans ce test la boucle repart indefiniment sur une base injoignable.
-                if ($last_id <= 0 || $last_id === PHP_INT_MAX) break;
+            if ($this->main_query_failed($rows)) {
+                $this->retry_or_abort('subscriptions', ++$failures, $last_id, $count);
+                $batch_size = self::halved_batch($batch_size);
                 continue;
             }
+            $failures = 0;
             if (empty($rows)) break;
 
             $sub_ids = wp_list_pluck($rows, 'ID');
@@ -2832,23 +2856,31 @@ class Fullmetrix_Fast_Stream_Exporter {
         return array_filter(explode(',', $value));
     }
 
-    /**
-     * Find the next valid ID for cursor recovery after a failed query.
-     * For DESC order (orders/refunds/subscriptions): find MAX(id) < current_last_id
-     * For ASC order (customers/products/categories/coupons): find MIN(id) > current_last_id
-     */
+    private function main_query_failed($rows) {
+        return $rows === null || (bool) $this->wpdb->last_error;
+    }
 
-    private function find_next_id_asc($table, $id_column, $after_id, $extra_where = '') {
-        $safe_column = esc_sql($id_column);
-        $safe_table = esc_sql($table);
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
-        $row = $this->wpdb->get_var(
-            $this->wpdb->prepare(
-                "SELECT MIN({$safe_column}) FROM {$safe_table} WHERE {$safe_column} > %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-                $after_id
-            ) . $extra_where
-        );
-        return $row !== null ? (int) $row - 1 : PHP_INT_MAX;
+    private function retry_or_abort($entity, $failures, $last_id, $count) {
+        $this->send_line(array('type' => 'error', 'entity' => $entity, 'message' => 'SQL error: ' . $this->wpdb->last_error));
+        if ($failures >= self::MAX_QUERY_FAILURES) {
+            $this->send_line(array(
+                'type' => 'fatal',
+                'entity' => $entity,
+                'reason' => 'query_failed',
+                'last_id' => (int) $last_id,
+                'sent' => (int) $count,
+            ));
+            throw new Fullmetrix_Stream_Aborted();
+        }
+        $this->pause_after_failure($failures);
+    }
+
+    protected function pause_after_failure($failures) {
+        sleep(2 * (int) $failures);
+    }
+
+    private static function halved_batch($size) {
+        return $size > 100 ? max(100, (int) ($size / 2)) : $size;
     }
 
     private function send_line($data) {
@@ -3581,4 +3613,7 @@ class Fullmetrix_Fast_Stream_Exporter {
             'meta_data' => $meta_data,
         );
     }
+}
+
+class Fullmetrix_Stream_Aborted extends RuntimeException {
 }

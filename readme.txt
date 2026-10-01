@@ -4,7 +4,7 @@ Tags: woocommerce, woocommerce analytics, woocommerce reports, ecommerce analyti
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.10.1
+Stable tag: 1.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -107,7 +107,7 @@ No. All syncing happens silently in the background. Your customers will not noti
 
 = What kind of insights will I get? =
 
-Revenue trends, conversion data, top-selling products, customer lifetime value, cohort retention, abandoned cart recovery, audience segments, and much more — everything you need to make smarter marketing decisions and grow your store.
+Revenue trends, conversion data, top-selling products, customer lifetime value, cohort retention, abandoned cart recovery, audience segments, and much more: everything you need to make smarter marketing decisions and grow your store.
 
 = Can I use Fullmetrix to run ads? =
 
@@ -134,6 +134,11 @@ The plugin connects your WooCommerce store to the Fullmetrix service at [fullmet
 9. Top sellers across products, variations and categories
 
 == Changelog ==
+
+= 1.11.0 =
+* Security: calls from Fullmetrix are signed with the method, the exact query, a timestamp, a single-use nonce for commands and the body hash, and bound to the endpoint they target. The previous signature is refused. It can only be re-enabled from the server for an emergency, with `wp option update fullmetrix_signature_v1 1`.
+* Security: JSON answers to Fullmetrix are signed.
+* Fixed: an export query that keeps failing now stops the stream instead of reporting it complete. Related tables are read faster and without losing columns, the updated orders, products and customers listings are paged without duplicates, and coupon creation rejects invalid values.
 
 = 1.10.1 =
 * Fixed: the customer sync no longer stops on stores where many extensions link their own tables to customers
@@ -184,7 +189,7 @@ The plugin connects your WooCommerce store to the Fullmetrix service at [fullmet
 * Added: variations inherit the parent product brand
 
 = 1.4.3 =
-* Added: order line item defense — woocommerce_checkout_create_order_line_item hook forces gift line to qty=1 + total=0 even if the cart was tampered with before checkout
+* Added: order line item defense: the woocommerce_checkout_create_order_line_item hook forces gift line to qty=1 + total=0 even if the cart was tampered with before checkout
 
 = 1.4.2 =
 * Improved: Gift product line now displays at 0 EUR directly in the cart instead of full price plus a separate discount line
@@ -195,7 +200,7 @@ The plugin connects your WooCommerce store to the Fullmetrix service at [fullmet
 
 = 1.4.0 =
 * Fixed: Gift coupon now auto-adds the offered product to the cart on apply, instead of failing validation when the cart is empty
-* Added: Anti-cheat for gift coupons — gift line is locked to quantity 1, only the flagged line receives the 100% discount, manually-added copies of the same product keep their full price
+* Added: Anti-cheat for gift coupons. The gift line is locked to quantity 1, only the flagged line receives the 100% discount, manually-added copies of the same product keep their full price
 * Improved: Variation gift coupons store the variation ID directly so the correct variation is added to the cart
 
 = 1.3.0 =
@@ -260,6 +265,9 @@ All communications use HTTPS and are authenticated with HMAC-SHA256 signatures. 
 This plugin connects your WooCommerce store to the Fullmetrix service ([fullmetrix.com](https://fullmetrix.com)). See the "External services" section above for full details on data transmission. See the [Fullmetrix Privacy Policy](https://fullmetrix.com/privacy) for more details.
 
 == Upgrade Notice ==
+
+= 1.11.0 =
+Calls from Fullmetrix use a stronger signature and the previous one is refused. Update Fullmetrix-connected stores to this version.
 
 = 1.10.1 =
 Fixes the customer sync on stores with many extensions linked to customers.

@@ -3,7 +3,11 @@ defined('ABSPATH') || exit;
 
 class Fullmetrix_API {
 
+    private static $response_nonce = null;
+
     public static function register_routes() {
+        add_filter('rest_pre_serve_request', array(__CLASS__, 'serve_signed_response'), 10, 4);
+
         register_rest_route('fullmetrix/v1', '/export', array(
             'methods' => 'GET',
             'callback' => array(__CLASS__, 'handle_export'),
@@ -42,57 +46,34 @@ class Fullmetrix_API {
     }
 
     public static function verify_request($request) {
-        $secret = get_option('fullmetrix_connection_secret', '');
-
-        if (empty($secret)) {
-            return new WP_Error(
-                'not_configured',
-                __('Plugin not configured', 'fullmetrix'),
-                array('status' => 401)
-            );
-        }
-
-        $signature = $request->get_header('X-Fullmetrix-Signature');
-        $timestamp = $request->get_header('X-Fullmetrix-Timestamp');
-        $code = $request->get_header('X-Fullmetrix-Connection-Code');
-
-        if (empty($signature) || empty($timestamp) || empty($code)) {
-            return new WP_Error(
-                'missing_headers',
-                __('Missing authentication headers', 'fullmetrix'),
-                array('status' => 401)
-            );
-        }
-
-        $stored_code = get_option('fullmetrix_connection_code', '');
-        if ($code !== $stored_code) {
-            return new WP_Error(
-                'invalid_code',
-                __('Invalid connection code', 'fullmetrix'),
-                array('status' => 401)
-            );
-        }
-
-        $is_valid = Fullmetrix_Security::verify_signature($secret, '', $signature, intval($timestamp));
-
-        if (!$is_valid) {
-            return new WP_Error(
-                'invalid_signature',
-                __('Invalid or expired signature', 'fullmetrix'),
-                array('status' => 401)
-            );
-        }
-
-        return true;
+        return self::authorize($request, false);
     }
 
     public static function verify_command_request($request) {
+        return self::authorize($request, true);
+    }
+
+    private static function authorize($request, $is_command) {
         $secret = get_option('fullmetrix_connection_secret', '');
+        $stored_code = get_option('fullmetrix_connection_code', '');
+        self::send_version_header();
 
         if (empty($secret)) {
             return new WP_Error('not_configured', __('Plugin not configured', 'fullmetrix'), array('status' => 401));
         }
 
+        if ($request->get_header(Fullmetrix_Signature::HEADER_VERSION) === '2') {
+            return self::authorize_v2($request, $secret, $stored_code, $is_command);
+        }
+
+        if (!Fullmetrix_Signature::v1_allowed()) {
+            return new WP_Error('signature_v2_required', __('Signature v2 required', 'fullmetrix'), array('status' => 401));
+        }
+
+        return self::authorize_v1($request, $secret, $stored_code, $is_command ? $request->get_body() : '');
+    }
+
+    private static function authorize_v1($request, $secret, $stored_code, $body) {
         $signature = $request->get_header('X-Fullmetrix-Signature');
         $timestamp = $request->get_header('X-Fullmetrix-Timestamp');
         $code = $request->get_header('X-Fullmetrix-Connection-Code');
@@ -101,19 +82,83 @@ class Fullmetrix_API {
             return new WP_Error('missing_headers', __('Missing authentication headers', 'fullmetrix'), array('status' => 401));
         }
 
-        $stored_code = get_option('fullmetrix_connection_code', '');
         if ($code !== $stored_code) {
             return new WP_Error('invalid_code', __('Invalid connection code', 'fullmetrix'), array('status' => 401));
         }
 
-        // POST commands sign the body
-        $body = $request->get_body();
-        $is_valid = Fullmetrix_Security::verify_signature($secret, $body, $signature, intval($timestamp));
-
-        if (!$is_valid) {
+        if (!Fullmetrix_Security::verify_signature($secret, $body, $signature, intval($timestamp))) {
             return new WP_Error('invalid_signature', __('Invalid or expired signature', 'fullmetrix'), array('status' => 401));
         }
 
+        return true;
+    }
+
+    private static function authorize_v2($request, $secret, $stored_code, $is_command) {
+        $verdict = Fullmetrix_Signature::verify_request(
+            $secret,
+            $stored_code,
+            array(
+                'version' => $request->get_header(Fullmetrix_Signature::HEADER_VERSION),
+                'code' => $request->get_header(Fullmetrix_Signature::HEADER_CODE),
+                'timestamp' => $request->get_header(Fullmetrix_Signature::HEADER_TIMESTAMP),
+                'nonce' => $request->get_header(Fullmetrix_Signature::HEADER_NONCE),
+                'signature' => $request->get_header(Fullmetrix_Signature::HEADER_SIGNATURE),
+            ),
+            $request->get_method(),
+            Fullmetrix_Signature::raw_query_string(),
+            $request->get_body(),
+            self::operation($request)
+        );
+        self::$response_nonce = $verdict['nonce'];
+
+        if (!$verdict['ok']) {
+            return new WP_Error('invalid_signature', __('Invalid or expired signature', 'fullmetrix'), array(
+                'status' => 401,
+                'reason' => $verdict['reason'],
+                'server_time' => time(),
+            ));
+        }
+
+        if ($is_command) {
+            $stored = Fullmetrix_Signature::remember_nonce($verdict['nonce']);
+            if ($stored === Fullmetrix_Signature::NONCE_REPLAYED) {
+                return new WP_Error('replayed_request', __('Replayed request', 'fullmetrix'), array('status' => 409));
+            }
+            if ($stored !== Fullmetrix_Signature::NONCE_STORED) {
+                return new WP_Error('nonce_unavailable', __('Request could not be recorded, retry later', 'fullmetrix'), array('status' => 503));
+            }
+        }
+
+        return true;
+    }
+
+    private static function operation($request) {
+        return (string) preg_replace('#^/fullmetrix/v1/#', '', (string) $request->get_route());
+    }
+
+    private static function send_version_header() {
+        if (!headers_sent()) {
+            header('X-Fullmetrix-Plugin-Version: ' . FULLMETRIX_VERSION);
+        }
+    }
+
+    public static function serve_signed_response($served, $result, $request, $server) {
+        if ($served || self::$response_nonce === null || headers_sent()) {
+            return $served;
+        }
+        if (strpos((string) $request->get_route(), '/fullmetrix/v1/') !== 0) {
+            return $served;
+        }
+        $secret = get_option('fullmetrix_connection_secret', '');
+        $body = wp_json_encode($server->response_to_data($result, false));
+        if (empty($secret) || !is_string($body)) {
+            return $served;
+        }
+        foreach (Fullmetrix_Signature::response_headers($secret, self::$response_nonce, $body) as $name => $value) {
+            $server->send_header($name, $value);
+        }
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- signed JSON body, must be sent byte for byte
+        echo $body;
         return true;
     }
 
@@ -131,10 +176,6 @@ class Fullmetrix_API {
             switch ($action) {
                 case 'coupon.create':
                     return rest_ensure_response(self::command_coupon_create($payload));
-                case 'coupon.update':
-                    return rest_ensure_response(self::command_coupon_update($payload));
-                case 'coupon.delete':
-                    return rest_ensure_response(self::command_coupon_delete($payload));
                 default:
                     return new WP_Error('unknown_action', 'Unknown action: ' . $action, array('status' => 400));
             }
@@ -144,8 +185,16 @@ class Fullmetrix_API {
     }
 
     private static function command_coupon_create($payload) {
-        if (empty($payload['code'])) {
-            throw new Exception('Missing coupon code');
+        if (!is_array($payload) || !isset($payload['code']) || !is_string($payload['code']) || !preg_match('/^[A-Za-z0-9_-]{1,64}$/', $payload['code'])) {
+            return new WP_Error('invalid_coupon', 'Invalid coupon code', array('status' => 400));
+        }
+        if (array_key_exists('amount', $payload) && (!is_numeric($payload['amount']) || !is_finite((float) $payload['amount']) || (float) $payload['amount'] < 0)) {
+            return new WP_Error('invalid_coupon', 'Invalid coupon amount', array('status' => 400));
+        }
+        foreach (array('usageLimit', 'usageLimitPerUser') as $limit) {
+            if (array_key_exists($limit, $payload) && (!is_numeric($payload[$limit]) || (int) $payload[$limit] < 1)) {
+                return new WP_Error('invalid_coupon', 'Invalid ' . $limit, array('status' => 400));
+            }
         }
 
         $coupon = new WC_Coupon();
@@ -164,46 +213,6 @@ class Fullmetrix_API {
                 'id' => $coupon->get_id(),
                 'code' => $coupon->get_code(),
             ),
-        );
-    }
-
-    private static function command_coupon_update($payload) {
-        if (empty($payload['id'])) {
-            throw new Exception('Missing coupon id');
-        }
-
-        $coupon = new WC_Coupon(intval($payload['id']));
-        if (!$coupon->get_id()) {
-            throw new Exception('Coupon not found');
-        }
-
-        self::apply_coupon_fields($coupon, $payload);
-        $coupon->save();
-
-        return array(
-            'success' => true,
-            'data' => array(
-                'id' => $coupon->get_id(),
-                'code' => $coupon->get_code(),
-            ),
-        );
-    }
-
-    private static function command_coupon_delete($payload) {
-        if (empty($payload['id'])) {
-            throw new Exception('Missing coupon id');
-        }
-
-        $coupon = new WC_Coupon(intval($payload['id']));
-        if (!$coupon->get_id()) {
-            throw new Exception('Coupon not found');
-        }
-
-        $coupon->delete(true);
-
-        return array(
-            'success' => true,
-            'data' => array('id' => intval($payload['id'])),
         );
     }
 
@@ -640,7 +649,7 @@ class Fullmetrix_API {
                 WHERE date_updated_gmt > %s
                     AND status NOT IN ('trash', 'draft', 'auto-draft', 'wc-checkout-draft')
                     AND type = 'shop_order'
-                ORDER BY date_updated_gmt DESC
+                ORDER BY id ASC
                 LIMIT %d OFFSET %d",
                 $orders_table, $from, $limit, $offset
             );
@@ -651,7 +660,7 @@ class Fullmetrix_API {
                 WHERE post_type = 'shop_order'
                     AND post_modified > %s
                     AND post_status NOT IN ('trash', 'draft', 'auto-draft', 'checkout-draft', 'wc-checkout-draft')
-                ORDER BY post_modified_gmt DESC
+                ORDER BY ID ASC
                 LIMIT %d OFFSET %d",
                 $wpdb->posts, $from, $limit, $offset
             );
@@ -668,7 +677,7 @@ class Fullmetrix_API {
             WHERE post_type IN ('product', 'product_variation')
                 AND post_modified > %s
                 AND post_status != 'trash'
-            ORDER BY post_modified_gmt DESC
+            ORDER BY post_modified_gmt DESC, ID DESC
             LIMIT %d OFFSET %d",
             $wpdb->posts, $from, $limit, $offset
         );
@@ -685,7 +694,7 @@ class Fullmetrix_API {
             FROM %i
             WHERE meta_key = 'last_update'
                 AND meta_value > %d
-            ORDER BY meta_value DESC
+            ORDER BY meta_value DESC, umeta_id DESC
             LIMIT %d OFFSET %d",
             $wpdb->usermeta, $time, $limit, $offset
         );

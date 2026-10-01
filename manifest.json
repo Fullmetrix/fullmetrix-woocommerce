@@ -1,5 +1,5 @@
 {
-  "version": "1.10.1",
+  "version": "1.11.0",
   "minimumRequired": "1.0.0",
-  "changelog": "La synchronisation des clients ne s'arrête plus sur les boutiques qui ont beaucoup d'extensions liées aux clients."
+  "changelog": "Les appels de Fullmetrix sont désormais signés avec une signature plus sûre, liée à la requête exacte et impossible à rejouer pour les commandes, et l'ancienne signature est refusée. Un export qui échoue toujours s'arrête au lieu d'être déclaré complet, et la création de coupon refuse les valeurs invalides."
 }
