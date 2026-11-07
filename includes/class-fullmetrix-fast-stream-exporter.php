@@ -436,8 +436,8 @@ class Fullmetrix_Fast_Stream_Exporter {
                 $this->wpdb->prepare(
                     "SELECT
                         o.*,
-                        op.discount_total_amount, op.shipping_total_amount,
-                        op.date_paid_gmt, op.date_completed_gmt, op.prices_include_tax,
+                        op.discount_total_amount, op.shipping_total_amount, op.shipping_tax_amount,
+                        op.date_paid_gmt, op.date_completed_gmt, op.prices_include_tax, op.created_via,
                         ba.first_name as billing_first_name, ba.last_name as billing_last_name,
                         ba.company as billing_company, ba.address_1 as billing_address_1,
                         ba.address_2 as billing_address_2, ba.city as billing_city,
@@ -495,14 +495,14 @@ class Fullmetrix_Fast_Stream_Exporter {
                         'total' => (string) $row->total_amount,
                         'discount_total' => (string) ($row->discount_total_amount ?? '0'),
                         'shipping_total' => (string) ($row->shipping_total_amount ?? '0'),
-                        'total_tax' => (string) ($row->tax_amount ?? '0'),
+                        'total_tax' => self::combined_tax_total($row->tax_amount ?? 0, $row->shipping_tax_amount ?? 0),
                         'date_created' => self::to_iso($row->date_created_gmt),
                         'date_modified' => self::to_iso($row->date_updated_gmt),
                         'date_paid' => self::to_iso($row->date_paid_gmt),
                         'date_completed' => self::to_iso($row->date_completed_gmt),
                         'payment_method' => $row->payment_method ?: null,
                         'payment_method_title' => $row->payment_method_title ?: null,
-                        'created_via' => $meta['_created_via'] ?? null,
+                        'created_via' => self::hpos_created_via($row),
                         'customer_id' => (int) $row->customer_id,
                         'customer_ip_address' => $row->ip_address ?: null,
                         'customer_user_agent' => $row->user_agent ?: null,
@@ -604,7 +604,7 @@ class Fullmetrix_Fast_Stream_Exporter {
         }
 
         $known_keys = array(
-            '_order_total', '_order_currency', '_cart_discount', '_order_shipping', '_order_tax',
+            '_order_total', '_order_currency', '_cart_discount', '_order_shipping', '_order_tax', '_order_shipping_tax',
             '_billing_first_name', '_billing_last_name', '_billing_company', '_billing_address_1',
             '_billing_address_2', '_billing_city', '_billing_state', '_billing_postcode',
             '_billing_country', '_billing_email', '_billing_phone',
@@ -661,7 +661,7 @@ class Fullmetrix_Fast_Stream_Exporter {
                         'total' => (string) ($meta['_order_total'] ?? '0'),
                         'discount_total' => (string) ($meta['_cart_discount'] ?? '0'),
                         'shipping_total' => (string) ($meta['_order_shipping'] ?? '0'),
-                        'total_tax' => (string) ($meta['_order_tax'] ?? '0'),
+                        'total_tax' => self::combined_tax_total($meta['_order_tax'] ?? 0, $meta['_order_shipping_tax'] ?? 0),
                         'date_created' => self::to_iso($row->post_date_gmt),
                         'date_modified' => self::to_iso($row->post_modified_gmt),
                         'date_paid' => isset($meta['_date_paid']) ? gmdate('c', (int) $meta['_date_paid']) : null,
@@ -977,7 +977,7 @@ class Fullmetrix_Fast_Stream_Exporter {
      */
     private function order_extra_meta_batch($order_ids) {
         $operational = $this->table_meta_by_order('wc_order_operational_data', $order_ids, array(
-            'discount_total_amount', 'shipping_total_amount',
+            'discount_total_amount', 'shipping_total_amount', 'shipping_tax_amount',
             'date_paid_gmt', 'date_completed_gmt', 'prices_include_tax',
         ));
         $addresses = $this->table_meta_by_order('wc_order_addresses', $order_ids, array(
@@ -1071,6 +1071,11 @@ class Fullmetrix_Fast_Stream_Exporter {
      * query rather than joined: two tables both carrying id and order_id would
      * collide in an associative fetch and silently overwrite the order id.
      */
+    private static function hpos_created_via($row) {
+        $value = isset($row->created_via) ? (string) $row->created_via : '';
+        return $value !== '' ? $value : null;
+    }
+
     private function table_meta_by_order($table, $order_ids, $mapped_columns = array(), $prefix = '', $prefix_column = '') {
         if (empty($order_ids)) {
             return array();
@@ -1371,11 +1376,13 @@ class Fullmetrix_Fast_Stream_Exporter {
                     break;
 
                 case 'shipping':
+                    $shipping_tax = self::item_tax_total($m['taxes'] ?? array());
                     $grouped[$order_id]['shipping_lines'][] = array(
                         'id' => $iid,
                         'method_title' => $row->order_item_name,
                         'method_id' => $m['method_id'] ?? '',
                         'total' => (string) ($m['cost'] ?? '0'),
+                        'total_tax' => (string) $shipping_tax,
                         'meta_data' => self::meta_pairs($m, array('method_id', 'cost')),
                     );
                     break;
@@ -1385,6 +1392,7 @@ class Fullmetrix_Fast_Stream_Exporter {
                         'id' => $iid,
                         'name' => $row->order_item_name,
                         'total' => (string) ($m['_line_total'] ?? '0'),
+                        'total_tax' => (string) ($m['_line_tax'] ?? '0'),
                         'meta_data' => self::meta_pairs($m, array('_line_total')),
                     );
                     break;
@@ -1411,6 +1419,27 @@ class Fullmetrix_Fast_Stream_Exporter {
         }
 
         return $grouped;
+    }
+
+    private static function combined_tax_total($tax, $shipping_tax) {
+        $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
+        return (string) round((float) $tax + (float) $shipping_tax, $decimals);
+    }
+
+    private static function item_tax_total($taxes) {
+        $taxes = maybe_unserialize($taxes);
+        if (!is_array($taxes)) {
+            return 0;
+        }
+        $totals = isset($taxes['total']) && is_array($taxes['total']) ? $taxes['total'] : $taxes;
+        $total = 0;
+        foreach ($totals as $amount) {
+            if (is_numeric($amount)) {
+                $total += (float) $amount;
+            }
+        }
+        $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
+        return round($total, $decimals);
     }
 
     // ─── REFUNDS ──────────────────────────────────────────────────────
@@ -2437,7 +2466,7 @@ class Fullmetrix_Fast_Stream_Exporter {
                         o.id, o.status, o.currency, o.total_amount, o.tax_amount,
                         o.date_created_gmt, o.date_updated_gmt, o.customer_id,
                         o.payment_method, o.payment_method_title, o.parent_order_id,
-                        op.discount_total_amount, op.shipping_total_amount,
+                        op.discount_total_amount, op.shipping_total_amount, op.shipping_tax_amount,
                         ba.first_name as billing_first_name, ba.last_name as billing_last_name,
                         ba.company as billing_company, ba.address_1 as billing_address_1,
                         ba.address_2 as billing_address_2, ba.city as billing_city,
@@ -2493,7 +2522,7 @@ class Fullmetrix_Fast_Stream_Exporter {
                         'total' => (string) $row->total_amount,
                         'discount_total' => (string) ($row->discount_total_amount ?? '0'),
                         'shipping_total' => (string) ($row->shipping_total_amount ?? '0'),
-                        'total_tax' => (string) ($row->tax_amount ?? '0'),
+                        'total_tax' => self::combined_tax_total($row->tax_amount ?? 0, $row->shipping_tax_amount ?? 0),
                         'date_created' => self::to_iso($row->date_created_gmt),
                         'date_modified' => self::to_iso($row->date_updated_gmt),
                         'payment_method' => $row->payment_method ?: null,
@@ -2577,7 +2606,7 @@ class Fullmetrix_Fast_Stream_Exporter {
         }
 
         $known_keys = array(
-            '_order_total', '_order_currency', '_cart_discount', '_order_shipping', '_order_tax',
+            '_order_total', '_order_currency', '_cart_discount', '_order_shipping', '_order_tax', '_order_shipping_tax',
             '_billing_first_name', '_billing_last_name', '_billing_company', '_billing_address_1',
             '_billing_address_2', '_billing_city', '_billing_state', '_billing_postcode',
             '_billing_country', '_billing_email', '_billing_phone',
@@ -2645,7 +2674,7 @@ class Fullmetrix_Fast_Stream_Exporter {
                         'total' => (string) ($meta['_order_total'] ?? '0'),
                         'discount_total' => (string) ($meta['_cart_discount'] ?? '0'),
                         'shipping_total' => (string) ($meta['_order_shipping'] ?? '0'),
-                        'total_tax' => (string) ($meta['_order_tax'] ?? '0'),
+                        'total_tax' => self::combined_tax_total($meta['_order_tax'] ?? 0, $meta['_order_shipping_tax'] ?? 0),
                         'date_created' => self::to_iso($row->post_date_gmt),
                         'date_modified' => self::to_iso($row->post_modified_gmt),
                         'payment_method' => $meta['_payment_method'] ?? null,
@@ -2976,8 +3005,8 @@ class Fullmetrix_Fast_Stream_Exporter {
                         o.date_created_gmt, o.date_updated_gmt, o.customer_id,
                         o.payment_method, o.payment_method_title, o.ip_address, o.user_agent,
                         o.transaction_id, o.customer_note, o.parent_order_id,
-                        op.discount_total_amount, op.shipping_total_amount,
-                        op.date_paid_gmt, op.date_completed_gmt, op.prices_include_tax,
+                        op.discount_total_amount, op.shipping_total_amount, op.shipping_tax_amount,
+                        op.date_paid_gmt, op.date_completed_gmt, op.prices_include_tax, op.created_via,
                         ba.first_name as billing_first_name, ba.last_name as billing_last_name,
                         ba.company as billing_company, ba.address_1 as billing_address_1,
                         ba.address_2 as billing_address_2, ba.city as billing_city,
@@ -3017,13 +3046,14 @@ class Fullmetrix_Fast_Stream_Exporter {
                 'total' => (string) $row->total_amount,
                 'discount_total' => (string) ($row->discount_total_amount ?? '0'),
                 'shipping_total' => (string) ($row->shipping_total_amount ?? '0'),
-                'total_tax' => (string) ($row->tax_amount ?? '0'),
+                'total_tax' => self::combined_tax_total($row->tax_amount ?? 0, $row->shipping_tax_amount ?? 0),
                 'date_created' => self::to_iso($row->date_created_gmt),
                 'date_modified' => self::to_iso($row->date_updated_gmt),
                 'date_paid' => self::to_iso($row->date_paid_gmt),
                 'date_completed' => self::to_iso($row->date_completed_gmt),
                 'payment_method' => $row->payment_method ?: null,
                 'payment_method_title' => $row->payment_method_title ?: null,
+                'created_via' => self::hpos_created_via($row),
                 'customer_id' => (int) $row->customer_id,
                 'customer_ip_address' => $row->ip_address ?: null,
                 'customer_user_agent' => $row->user_agent ?: null,
@@ -3085,7 +3115,7 @@ class Fullmetrix_Fast_Stream_Exporter {
 
         $known_keys = array(
             '_order_total', '_order_currency', '_cart_discount', '_order_shipping',
-            '_order_tax', '_billing_first_name', '_billing_last_name', '_billing_company',
+            '_order_tax', '_order_shipping_tax', '_billing_first_name', '_billing_last_name', '_billing_company',
             '_billing_address_1', '_billing_address_2', '_billing_city', '_billing_state',
             '_billing_postcode', '_billing_country', '_billing_email', '_billing_phone',
             '_shipping_first_name', '_shipping_last_name', '_shipping_company',
@@ -3105,7 +3135,7 @@ class Fullmetrix_Fast_Stream_Exporter {
             'total' => (string) ($m['_order_total'] ?? '0'),
             'discount_total' => (string) ($m['_cart_discount'] ?? '0'),
             'shipping_total' => (string) ($m['_order_shipping'] ?? '0'),
-            'total_tax' => (string) ($m['_order_tax'] ?? '0'),
+            'total_tax' => self::combined_tax_total($m['_order_tax'] ?? 0, $m['_order_shipping_tax'] ?? 0),
             'date_created' => self::to_iso($row->post_date_gmt),
             'date_modified' => self::to_iso($row->post_modified_gmt),
             'date_paid' => isset($m['_date_paid']) && $m['_date_paid'] ? gmdate('c', (int) $m['_date_paid']) : null,
@@ -3537,7 +3567,7 @@ class Fullmetrix_Fast_Stream_Exporter {
 
         $known_keys = array(
             '_order_total', '_order_currency', '_cart_discount', '_order_shipping',
-            '_order_tax', '_billing_first_name', '_billing_last_name', '_billing_company',
+            '_order_tax', '_order_shipping_tax', '_billing_first_name', '_billing_last_name', '_billing_company',
             '_billing_address_1', '_billing_address_2', '_billing_city', '_billing_state',
             '_billing_postcode', '_billing_country', '_billing_email', '_billing_phone',
             '_shipping_first_name', '_shipping_last_name', '_shipping_company',
@@ -3567,7 +3597,7 @@ class Fullmetrix_Fast_Stream_Exporter {
             'total' => (string) ($m['_order_total'] ?? '0'),
             'discount_total' => (string) ($m['_cart_discount'] ?? '0'),
             'shipping_total' => (string) ($m['_order_shipping'] ?? '0'),
-            'total_tax' => (string) ($m['_order_tax'] ?? '0'),
+            'total_tax' => self::combined_tax_total($m['_order_tax'] ?? 0, $m['_order_shipping_tax'] ?? 0),
             'date_created' => self::to_iso($row->post_date_gmt),
             'date_modified' => self::to_iso($row->post_modified_gmt),
             'payment_method' => $m['_payment_method'] ?? null,

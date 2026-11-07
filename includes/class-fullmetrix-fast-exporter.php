@@ -70,6 +70,7 @@ class Fullmetrix_Fast_Exporter {
                     o.customer_note,
                     op.discount_total_amount,
                     op.shipping_total_amount,
+                    op.shipping_tax_amount,
                     op.date_paid_gmt,
                     op.date_completed_gmt,
                     ba.first_name as billing_first_name,
@@ -122,7 +123,7 @@ class Fullmetrix_Fast_Exporter {
                 'total' => (float) $row->total_amount,
                 'discount_total' => (float) ($row->discount_total_amount ?? 0),
                 'shipping_total' => (float) ($row->shipping_total_amount ?? 0),
-                'tax_total' => (float) ($row->tax_amount ?? 0),
+                'tax_total' => (float) ($row->tax_amount ?? 0) + (float) ($row->shipping_tax_amount ?? 0),
                 'date_created' => $row->date_created_gmt ? gmdate('c', strtotime($row->date_created_gmt)) : null,
                 'date_modified' => $row->date_updated_gmt ? gmdate('c', strtotime($row->date_updated_gmt)) : null,
                 'date_paid' => $row->date_paid_gmt ? gmdate('c', strtotime($row->date_paid_gmt)) : null,
@@ -219,7 +220,7 @@ class Fullmetrix_Fast_Exporter {
                 'total' => (float) ($meta['_order_total'] ?? 0),
                 'discount_total' => (float) ($meta['_cart_discount'] ?? 0),
                 'shipping_total' => (float) ($meta['_order_shipping'] ?? 0),
-                'tax_total' => (float) ($meta['_order_tax'] ?? 0),
+                'tax_total' => (float) ($meta['_order_tax'] ?? 0) + (float) ($meta['_order_shipping_tax'] ?? 0),
                 'date_created' => $row->post_date_gmt ? gmdate('c', strtotime($row->post_date_gmt)) : null,
                 'date_modified' => $row->post_modified_gmt ? gmdate('c', strtotime($row->post_modified_gmt)) : null,
                 'date_paid' => isset($meta['_date_paid']) ? gmdate('c', (int) $meta['_date_paid']) : null,
@@ -278,7 +279,7 @@ class Fullmetrix_Fast_Exporter {
              FROM %i
              WHERE post_id IN (" . $placeholders . ")
              AND meta_key IN (
-                '_order_total', '_order_currency', '_cart_discount', '_order_shipping', '_order_tax',
+                '_order_total', '_order_currency', '_cart_discount', '_order_shipping', '_order_tax', '_order_shipping_tax',
                 '_billing_first_name', '_billing_last_name', '_billing_company', '_billing_address_1',
                 '_billing_address_2', '_billing_city', '_billing_state', '_billing_postcode',
                 '_billing_country', '_billing_email', '_billing_phone',

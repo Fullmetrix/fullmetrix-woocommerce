@@ -4,7 +4,7 @@ Tags: woocommerce, woocommerce analytics, woocommerce reports, ecommerce analyti
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.11.0
+Stable tag: 1.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -119,21 +119,33 @@ Yes. Subscription revenue and recurring customers are tracked automatically alon
 
 = What external service does the plugin connect to? =
 
-The plugin connects your WooCommerce store to the Fullmetrix service at [fullmetrix.com](https://fullmetrix.com). Store data required for analytics and reporting is transmitted after a store administrator explicitly configures the connection. Review the [Fullmetrix privacy policy](https://fullmetrix.com/privacy) and [terms of service](https://fullmetrix.com/terms) before connecting your store.
+The plugin connects your WooCommerce store to the Fullmetrix service at [fullmetrix.com](https://fullmetrix.com). Store data required for analytics and reporting is transmitted after a store administrator explicitly configures the connection. A background task also downloads the Fullmetrix tracking script, checks its fingerprint and saves it in `wp-content/uploads/fullmetrix/` so it loads from your store domain. Review the [Fullmetrix privacy policy](https://fullmetrix.com/privacy) and [terms of service](https://fullmetrix.com/terms) before connecting your store.
 
 == Screenshots ==
 
-1. Dashboard overview with revenue, orders, top products and top categories
-2. Detailed sales, orders, products and customers analytics
-3. Revenue analytics with gross and net revenue breakdown
-4. Revenue by country and customer type
-5. Orders list with status, customer and value
-6. Customers list with lifetime value and order history
-7. Cohort analysis with retention curves
-8. Custom segments builder for targeted audiences
-9. Top sellers across products, variations and categories
+1. Customer journey from first ad click to order, with real ROAS
+2. Real profit per order after product, shipping and ad costs
+3. Customer segments by orders and behavior, synced to your ads
+4. Server-side orders sent to Meta, Google and TikTok Ads
+5. Every cart with its customer, products and recovery link
+6. Your key numbers delivered by email or Slack
+7. Scheduled exports to Google Sheets, Slack or email
+8. Sign-up forms that turn visitors into contacts
+9. Post-purchase survey: how did customers find you
+10. Ask your store data questions in Claude or ChatGPT
 
 == Changelog ==
+
+= 1.12.0 =
+* Improved: the tracking script is served from your own store domain. A background task (Action Scheduler, every 10 minutes) downloads it from Fullmetrix with a 3 second timeout and a growing pause after failures, checks its SHA-256 fingerprint and origin, and saves it in `wp-content/uploads/fullmetrix/`. Nothing is added to the shopper's request.
+* Improved: when the file is missing, invalid or the folder is not writable, the store keeps loading the script from fullmetrix.com exactly as before
+* Added: Fullmetrix can switch the store back to the fullmetrix.com script remotely
+* Added: uninstalling the plugin removes the saved script and its scheduled task
+* Improved: the Fullmetrix visitor cookie is set again by your own store server, on a same-origin request to your home page, so it is kept longer by browsers that cap cookies written by scripts. Only this anonymous identifier is set, never a WordPress or WooCommerce session, and Fullmetrix can switch it off remotely.
+
+= 1.11.1 =
+* Fixed: shipping tax is included in exported order tax totals for both HPOS and legacy order storage
+* Fixed: shipping and fee lines include their own tax amounts in fast exports
 
 = 1.11.0 =
 * Security: calls from Fullmetrix are signed with the method, the exact query, a timestamp, a single-use nonce for commands and the body hash, and bound to the endpoint they target. The previous signature is refused. It can only be re-enabled from the server for an emergency, with `wp option update fullmetrix_signature_v1 1`.
@@ -241,28 +253,7 @@ The plugin connects your WooCommerce store to the Fullmetrix service at [fullmet
 
 == External services ==
 
-This plugin connects your WooCommerce store to the Fullmetrix platform ([fullmetrix.com](https://fullmetrix.com)). It relies on the following external service:
-
-= Fullmetrix API =
-
-**What it is:** Fullmetrix is an e-commerce analytics platform that aggregates and analyzes your store data.
-
-**What data is sent and when:**
-
-* **On connection (one-time):** Your store URL, plugin version, WooCommerce version, currency, timezone, and locale are sent to `https://fullmetrix.com/api/plugin/register` when you enter your connection code and click "Connect".
-* **On page load (frontend):** The plugin loads a JavaScript tracker (`t.js`) from `https://fullmetrix.com/t.js` on all public pages. This script collects anonymous visitor browsing data (page views, cart activity) and sends it to `https://fullmetrix.com/api/webhooks/events`.
-* **On configuration check:** The plugin periodically fetches its remote configuration from `https://fullmetrix.com/api/plugin/config` (cached for 5 minutes).
-* **On data sync (triggered from Fullmetrix dashboard):** Orders, customers, products, categories, coupons, refunds, and subscription data are exported to Fullmetrix when a sync is initiated.
-* **On real-time changes:** When orders, customers, products, or coupons are created or updated in WooCommerce, a webhook notification is sent to `https://fullmetrix.com/api/webhooks/ecommerce`.
-
-All communications use HTTPS and are authenticated with HMAC-SHA256 signatures. No data is sent to any third party other than the Fullmetrix service.
-
-* [Fullmetrix Terms of Service](https://fullmetrix.com/terms)
-* [Fullmetrix Privacy Policy](https://fullmetrix.com/privacy)
-
-== Privacy Policy ==
-
-This plugin connects your WooCommerce store to the Fullmetrix service ([fullmetrix.com](https://fullmetrix.com)). See the "External services" section above for full details on data transmission. See the [Fullmetrix Privacy Policy](https://fullmetrix.com/privacy) for more details.
+This plugin connects your store to Fullmetrix ([fullmetrix.com](https://fullmetrix.com)), the service that hosts your reports. Once a store administrator connects the store, store data (orders, customers, products, coupons, refunds and subscriptions) and anonymous visitor activity from the storefront are sent to Fullmetrix over HTTPS. See the [Fullmetrix Terms of Service](https://fullmetrix.com/terms) and [Privacy Policy](https://fullmetrix.com/privacy).
 
 == Upgrade Notice ==
 

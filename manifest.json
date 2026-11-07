@@ -1,5 +1,5 @@
 {
-  "version": "1.11.0",
+  "version": "1.12.0",
   "minimumRequired": "1.0.0",
-  "changelog": "Les appels de Fullmetrix sont désormais signés avec une signature plus sûre, liée à la requête exacte et impossible à rejouer pour les commandes, et l'ancienne signature est refusée. Un export qui échoue toujours s'arrête au lieu d'être déclaré complet, et la création de coupon refuse les valeurs invalides."
+  "changelog": "Le script de suivi est servi depuis le domaine de la boutique. Une tâche de fond (Action Scheduler, toutes les 10 minutes) le télécharge depuis Fullmetrix avec un délai de 3 s et une pause qui grandit après un échec, vérifie son empreinte SHA-256 et son origine, puis l'enregistre dans wp-content/uploads/fullmetrix/. Sans fichier valide, la boutique charge le script depuis fullmetrix.com comme avant. Fullmetrix peut revenir à l'adresse distante à distance, et la désinstallation supprime le fichier et la tâche. Le cookie visiteur anonyme fm_vid est reposé par le serveur de la boutique (POST same-origin sur l'accueil, réponse 204 avant WordPress et WooCommerce), pour durer plus longtemps sur Safari. Durée et interrupteur viennent du serveur Fullmetrix."
 }

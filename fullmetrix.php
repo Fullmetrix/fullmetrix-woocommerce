@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Fullmetrix Reporting, Analytics & Marketing for WooCommerce
  * Description: Connect your WooCommerce store to Fullmetrix to sync your orders, customers, and products.
- * Version: 1.11.0
+ * Version: 1.12.0
  * Author: Fullmetrix
  * Author URI: https://fullmetrix.com
  * License: GPL v2 or later
@@ -18,7 +18,10 @@
 
 defined('ABSPATH') || exit;
 
-define('FULLMETRIX_VERSION', '1.11.0');
+require_once plugin_dir_path(__FILE__) . 'includes/class-fullmetrix-keeper.php';
+Fullmetrix_Keeper::intercept();
+
+define('FULLMETRIX_VERSION', '1.12.0');
 define('FULLMETRIX_CART_PARAM', 'fm_cart_id');
 define('FULLMETRIX_CART_MAX_ITEMS', 25);
 define('FULLMETRIX_CART_RESOLVE_TIMEOUT', 1.5);
@@ -63,6 +66,8 @@ if (!class_exists('Fullmetrix_Connector')) {
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-tracking-sender.php';
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-gift-coupon.php';
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-checkout-consent.php';
+            require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-local-tracker.php';
+            require_once FULLMETRIX_PLUGIN_DIR . 'includes/class-fullmetrix-order-context.php';
             require_once FULLMETRIX_PLUGIN_DIR . 'includes/blocks/init.php';
         }
 
@@ -82,6 +87,8 @@ if (!class_exists('Fullmetrix_Connector')) {
             Fullmetrix_Webhook_Sender::init();
             Fullmetrix_Checkout_Consent::register_jobs();
             Fullmetrix_Gift_Coupon::init();
+            Fullmetrix_Local_Tracker::init();
+            Fullmetrix_Order_Context::init();
 
             if (self::is_configured() && !is_admin()) {
                 add_action('wp_enqueue_scripts', array($this, 'inject_tracker'), 5);
@@ -126,11 +133,14 @@ if (!class_exists('Fullmetrix_Connector')) {
             add_option('fullmetrix_connection_secret', '');
             add_option('fullmetrix_registered', false);
             add_option('fullmetrix_logs', array());
+            Fullmetrix_Local_Tracker::install();
+            Fullmetrix_Local_Tracker::ensure_scheduled();
         }
 
         public function on_deactivation() {
             Fullmetrix_Webhook_Sender::unschedule_all();
             Fullmetrix_Checkout_Consent::unschedule_all();
+            Fullmetrix_Local_Tracker::unschedule_all();
         }
 
         private function maybe_upgrade() {
@@ -143,6 +153,7 @@ if (!class_exists('Fullmetrix_Connector')) {
             add_option(FULLMETRIX_CONFIG_LAST_OPTION, array(), '', true);
             Fullmetrix_Http::install();
             Fullmetrix_Webhook_Sender::install();
+            Fullmetrix_Local_Tracker::install();
         }
 
         public static function get_cached_config() {
@@ -228,18 +239,29 @@ if (!class_exists('Fullmetrix_Connector')) {
             }
 
             $origin = rtrim(str_replace('/api/plugin', '', FULLMETRIX_API_BASE), '/');
+            $remote = esc_url($origin . '/t.js');
+            $version = FULLMETRIX_VERSION . '.' . floor(time() / 300);
+            $local = Fullmetrix_Local_Tracker::current();
+            $attributes = ' data-key="' . esc_attr($code) . '"';
+
+            if ($local !== null) {
+                $attributes .= ' data-platform="' . Fullmetrix_Local_Tracker::PLATFORM . '" data-fm-origin="' . esc_attr($local['origin']) . '"'
+                    . ' onerror="' . esc_attr(Fullmetrix_Local_Tracker::fallback_script($remote . '?ver=' . $version, $code, Fullmetrix_Keeper::path())) . '"';
+            }
+
+            $attributes .= Fullmetrix_Keeper::tag_attributes();
 
             wp_enqueue_script(
                 'fullmetrix-tracker',
-                esc_url($origin . '/t.js'),
+                $local !== null ? esc_url($local['url']) : $remote,
                 array(),
-                FULLMETRIX_VERSION . '.' . floor(time() / 300),
+                $local !== null ? null : $version,
                 array('strategy' => 'async', 'in_footer' => false)
             );
 
-            add_filter('script_loader_tag', function ($tag, $handle) use ($code) {
+            add_filter('script_loader_tag', function ($tag, $handle) use ($attributes) {
                 if ($handle === 'fullmetrix-tracker') {
-                    $tag = str_replace(' src=', ' data-key="' . esc_attr($code) . '" src=', $tag);
+                    $tag = str_replace(' src=', $attributes . ' src=', Fullmetrix_Keeper::prepare_tag($tag));
                 }
                 return $tag;
             }, 10, 2);
