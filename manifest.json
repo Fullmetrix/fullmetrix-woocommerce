@@ -1,5 +1,5 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "minimumRequired": "1.0.0",
-  "changelog": "Le script de suivi est servi depuis le domaine de la boutique. Une tâche de fond (Action Scheduler, toutes les 10 minutes) le télécharge depuis Fullmetrix avec un délai de 3 s et une pause qui grandit après un échec, vérifie son empreinte SHA-256 et son origine, puis l'enregistre dans wp-content/uploads/fullmetrix/. Sans fichier valide, la boutique charge le script depuis fullmetrix.com comme avant. Fullmetrix peut revenir à l'adresse distante à distance, et la désinstallation supprime le fichier et la tâche. Le cookie visiteur anonyme fm_vid est reposé par le serveur de la boutique (POST same-origin sur l'accueil, réponse 204 avant WordPress et WooCommerce), pour durer plus longtemps sur Safari. Durée et interrupteur viennent du serveur Fullmetrix."
+  "changelog": "Balise de mesure neutre : le script est chargé par une balise sans marque (clé opaque, attributs data-kvo), servi depuis wp-content/uploads/kvo/ et, à défaut, depuis https://fullmetrix.com/assets/js/s.js. Le point cookie répond sur /?kvo_k=1 (l'ancien /?fm_keep=1 reste accepté), lit le cookie _kvo_v puis fm_vid et repose les deux noms quand les deux sont présents. La case de consentement marketing au paiement et les événements panier envoyés par le serveur sont retirés ; l'identification à la connexion et à la commande reste. Les attributs d'exclusion des extensions de cache sont posés sur la balise."
 }

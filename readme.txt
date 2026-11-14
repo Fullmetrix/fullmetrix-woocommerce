@@ -4,7 +4,7 @@ Tags: woocommerce, woocommerce analytics, woocommerce reports, ecommerce analyti
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.12.0
+Stable tag: 1.13.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -119,7 +119,11 @@ Yes. Subscription revenue and recurring customers are tracked automatically alon
 
 = What external service does the plugin connect to? =
 
-The plugin connects your WooCommerce store to the Fullmetrix service at [fullmetrix.com](https://fullmetrix.com). Store data required for analytics and reporting is transmitted after a store administrator explicitly configures the connection. A background task also downloads the Fullmetrix tracking script, checks its fingerprint and saves it in `wp-content/uploads/fullmetrix/` so it loads from your store domain. Review the [Fullmetrix privacy policy](https://fullmetrix.com/privacy) and [terms of service](https://fullmetrix.com/terms) before connecting your store.
+The plugin connects your WooCommerce store to the Fullmetrix service at [fullmetrix.com](https://fullmetrix.com). Store data required for analytics and reporting is transmitted after a store administrator explicitly configures the connection. A background task also downloads the Fullmetrix measurement script, checks its fingerprint and saves it in `wp-content/uploads/kvo/` so it loads from your store domain; when that file is missing the script loads from `https://fullmetrix.com/assets/js/s.js`. The script sends page views, cart and order events to `https://fullmetrix.com`, or to a subdomain of your own store domain (`https://<label>.<your store domain>`) when you configured one in Fullmetrix. Review the [Fullmetrix privacy policy](https://fullmetrix.com/privacy) and [terms of service](https://fullmetrix.com/terms) before connecting your store.
+
+= Which cookies does the plugin set? =
+
+The measurement script sets first-party cookies on your store domain: `_kvo_v` (anonymous visitor identifier, up to 390 days), `_kvo_s` (session, 30 minutes) and `_kvo_c` (contact identifiers after a login or an order). Stores connected before version 1.13.0 keep the older `fm_vid`, `fm_sid` and `fm_cid` cookies with the same values until they expire. Your own server sets `_kvo_v` again on a same-origin request to `/?kvo_k=1` so browsers keep it longer; no WordPress or WooCommerce session cookie is set by that request. Tracking consent is not handled by the plugin: use your tag manager or consent tool to call `fm('consent', {...})` as described in the Fullmetrix documentation.
 
 == Screenshots ==
 
@@ -135,6 +139,14 @@ The plugin connects your WooCommerce store to the Fullmetrix service at [fullmet
 10. Ask your store data questions in Claude or ChatGPT
 
 == Changelog ==
+
+= 1.13.0 =
+* Changed: the measurement script is loaded by a neutral tag (opaque key, `data-kvo` attributes, no brand name in the page), saved in `wp-content/uploads/kvo/` and loaded from `https://fullmetrix.com/assets/js/s.js` when the file is missing
+* Changed: the tag carries the exclusion attributes of WP Rocket, Autoptimize, LiteSpeed Cache, SG Optimizer and WP Fastest Cache so it is never merged or deferred
+* Changed: the visitor cookie is `_kvo_v`; the cookie keeper answers on `/?kvo_k=1` (the former `/?fm_keep=1` still answers), reads `_kvo_v` then `fm_vid`, and sets both names again when both are present
+* Removed: the marketing consent checkbox at checkout and its background task
+* Removed: server side cart events; the identification at login and at checkout stays
+* Changed: the former `wp-content/uploads/fullmetrix/` folder is kept until the plugin is uninstalled
 
 = 1.12.0 =
 * Improved: the tracking script is served from your own store domain. A background task (Action Scheduler, every 10 minutes) downloads it from Fullmetrix with a 3 second timeout and a growing pause after failures, checks its SHA-256 fingerprint and origin, and saves it in `wp-content/uploads/fullmetrix/`. Nothing is added to the shopper's request.

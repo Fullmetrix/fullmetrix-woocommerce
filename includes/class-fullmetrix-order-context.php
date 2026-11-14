@@ -93,13 +93,13 @@ class Fullmetrix_Order_Context {
     }
 
     private static function context($order) {
-        $visitor = self::cookie('fm_vid', self::UUID_V4);
+        $visitor = self::first_cookie(array('_kvo_v', 'fm_vid'), self::UUID_V4);
         if ($visitor === null) {
             return null;
         }
 
         $context = array('v' => $visitor);
-        $session = self::cookie('fm_sid', self::UUID_V4);
+        $session = self::first_cookie(array('_kvo_s', 'fm_sid'), self::UUID_V4);
         if ($session !== null) {
             $context['s'] = $session;
         }
@@ -116,6 +116,16 @@ class Fullmetrix_Order_Context {
         $context['t'] = time();
 
         return $context;
+    }
+
+    private static function first_cookie($names, $pattern) {
+        foreach ($names as $name) {
+            $value = self::cookie($name, $pattern);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+        return null;
     }
 
     private static function cookie($name, $pattern) {

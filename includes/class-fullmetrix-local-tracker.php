@@ -5,21 +5,43 @@ final class Fullmetrix_Local_Tracker {
 
     const ACTION_HOOK = 'fullmetrix_refresh_tracker';
     const ACTION_GROUP = 'fullmetrix';
-    const STATE_OPTION = 'fullmetrix_local_tracker';
+    const STATE_OPTION = 'fullmetrix_local_tracker_v2';
+    const LEGACY_STATE_OPTION = 'fullmetrix_local_tracker';
     const SCHEDULE_CHECK_OPTION = 'fullmetrix_local_tracker_schedule_checked';
     const SCHEDULE_CHECK_EVERY = 3600;
     const KEEP_SECONDS = 604800;
     const TEMPORARY_SECONDS = 3600;
     const FEATURE = 'localTracker';
-    const PLATFORM = 'woocommerce';
-    const DIRECTORY = 'fullmetrix';
+    const PLATFORM = 'wc';
+    const HANDLE = 'kvo';
+    const DIRECTORY = 'kvo';
+    const LEGACY_DIRECTORY = 'fullmetrix';
     const INTERVAL = 600;
     const TIMEOUT = 3;
     const MAX_PAUSE = 21600;
     const MAX_BYTES = 2097152;
-    const ORIGIN_PATTERN = '#^https://([a-z0-9-]+\.)?fullmetrix\.com$#';
-    const VERSION_PATTERN = '#^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$#';
-    const FILE_PATTERN = '#^fm-[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.js$#';
+    const CONTRACT = 2;
+    const DEFAULT_ORIGIN = 'https://fullmetrix.com';
+    const FALLBACK_PATH = '/assets/js/s.js?k=';
+    const TAG_KEY_PATTERN = '#^[A-Z2-7]{20}$#';
+    const SEND_ORIGIN_PATTERN = '#^https://([a-z0-9-]{1,20})\.([a-z0-9.-]+)$#';
+    const VERSION_PATTERN = '#^[0-9a-f]{12}$#';
+    const FILE_PATTERN = '#^[0-9a-f]{12}\.js$#';
+    const TEMPORARY_PATTERN = '#^\.[0-9a-f]{12}\.js\.[0-9a-f]{12}\.tmp$#';
+    const LEGACY_FILE_PATTERN = '#^fm-[0-9a-f]{12}\.js$#';
+    const LEGACY_TEMPORARY_PATTERN = '#^\.fm-[0-9a-f]{12}\.js\.[0-9a-f]{12}\.tmp$#';
+    const INDEX_FILES = array('index.php' => "<?php\n", 'index.html' => '');
+    const EXCLUSION_ATTRIBUTES = array(
+        'data-no-optimize' => '1',
+        'data-no-defer' => '1',
+        'data-no-minify' => '1',
+        'data-cfasync' => 'false',
+        'nowprocket' => '1',
+        'data-noptimize' => '1',
+        'data-ao-skip' => '1',
+        'data-pagespeed-no-defer' => '1',
+        'data-wpfc-render' => 'false',
+    );
 
     public static function init() {
         add_action(self::ACTION_HOOK, array(__CLASS__, 'refresh'));
@@ -32,11 +54,59 @@ final class Fullmetrix_Local_Tracker {
         add_option(self::SCHEDULE_CHECK_OPTION, 0, '', true);
     }
 
-    public static function fallback_script($remote, $code, $keeper = null) {
-        return "var s=document.createElement('script');s.src='" . esc_js($remote) . "';s.async=true;"
-            . "s.setAttribute('data-key','" . esc_js($code) . "');s.setAttribute('data-platform','" . self::PLATFORM . "');"
-            . ($keeper !== null ? "s.setAttribute('data-fm-keeper','" . esc_js($keeper) . "');" : '')
-            . 'document.head.appendChild(s)';
+    public static function tag_key($code) {
+        $state = self::state();
+        return preg_match(self::TAG_KEY_PATTERN, $state['key']) === 1 ? $state['key'] : (string) $code;
+    }
+
+    public static function declared_domain() {
+        $host = wp_parse_url(home_url('/'), PHP_URL_HOST);
+        if (!is_string($host) || $host === '') {
+            return '';
+        }
+        $host = strtolower(rtrim($host, '.'));
+        return strpos($host, 'www.') === 0 ? substr($host, 4) : $host;
+    }
+
+    public static function accepted_send_origin($candidate, $domain) {
+        if (!is_string($candidate) || $candidate === self::DEFAULT_ORIGIN) {
+            return self::DEFAULT_ORIGIN;
+        }
+        if (preg_match(self::SEND_ORIGIN_PATTERN, $candidate, $match) !== 1 || $domain === '' || $match[2] !== $domain) {
+            return self::DEFAULT_ORIGIN;
+        }
+        return $candidate;
+    }
+
+    public static function send_origin() {
+        return self::accepted_send_origin(self::state()['origin'], self::declared_domain());
+    }
+
+    public static function fallback_url($code) {
+        return self::DEFAULT_ORIGIN . self::FALLBACK_PATH . rawurlencode(self::tag_key($code));
+    }
+
+    public static function tag($code) {
+        $attributes = array('data-kvo' => self::tag_key($code), 'data-kvo-p' => self::PLATFORM, 'data-kvo-v' => FULLMETRIX_VERSION);
+        $keeper = Fullmetrix_Keeper::path();
+        if ($keeper !== null) {
+            $attributes['data-kvo-k'] = $keeper;
+        }
+        $origin = self::send_origin();
+        if ($origin !== self::DEFAULT_ORIGIN) {
+            $attributes['data-kvo-o'] = $origin;
+        }
+        $attributes += self::EXCLUSION_ATTRIBUTES;
+
+        return array('attributes' => $attributes, 'local' => self::current(), 'fallback' => self::fallback_url($code));
+    }
+
+    public static function fallback_script($tag) {
+        $script = "var s=document.createElement('script');s.src='" . esc_js($tag['fallback']) . "';s.async=true;";
+        foreach ($tag['attributes'] as $name => $value) {
+            $script .= "s.setAttribute('" . esc_js($name) . "','" . esc_js($value) . "');";
+        }
+        return $script . 'document.head.appendChild(s)';
     }
 
     public static function current() {
@@ -44,16 +114,12 @@ final class Fullmetrix_Local_Tracker {
             return null;
         }
 
-        $state = get_option(self::STATE_OPTION);
-        if (!is_array($state) || empty($state['url']) || empty($state['origin'])) {
+        $state = self::state();
+        if ($state['url'] === '' || $state['file'] === '') {
             return null;
         }
 
-        if (!is_string($state['origin']) || preg_match(self::ORIGIN_PATTERN, $state['origin']) !== 1) {
-            return null;
-        }
-
-        return array('url' => (string) $state['url'], 'origin' => $state['origin']);
+        return $state['url'];
     }
 
     public static function ensure_scheduled_in_admin() {
@@ -69,13 +135,38 @@ final class Fullmetrix_Local_Tracker {
 
     public static function ensure_scheduled() {
         try {
-            if (!Fullmetrix_Connector::is_configured() || !function_exists('as_next_scheduled_action') || !function_exists('as_schedule_recurring_action')) {
+            if (!function_exists('as_next_scheduled_action') || !function_exists('as_schedule_recurring_action') || !did_action('init')) {
+                return;
+            }
+            self::finish_upgrade();
+            if (!Fullmetrix_Connector::is_configured()) {
                 return;
             }
             if (as_next_scheduled_action(self::ACTION_HOOK, array(), self::ACTION_GROUP) !== false) {
                 return;
             }
             as_schedule_recurring_action(time() + 60, self::INTERVAL, self::ACTION_HOOK, array(), self::ACTION_GROUP);
+        } catch (\Throwable $e) {
+            return;
+        }
+    }
+
+    private static function finish_upgrade() {
+        if (get_option(FULLMETRIX_UPGRADE_PENDING_OPTION, '') === '') {
+            return;
+        }
+        self::unschedule_consent();
+        if (Fullmetrix_Connector::is_configured() && function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::ACTION_HOOK, array(), self::ACTION_GROUP);
+        }
+        delete_option(FULLMETRIX_UPGRADE_PENDING_OPTION);
+    }
+
+    public static function unschedule_consent() {
+        try {
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions(FULLMETRIX_CONSENT_HOOK);
+            }
         } catch (\Throwable $e) {
             return;
         }
@@ -94,10 +185,16 @@ final class Fullmetrix_Local_Tracker {
     public static function uninstall() {
         self::unschedule_all();
         try {
-            $directory = self::directory();
             $filesystem = self::filesystem();
-            if ($directory !== null && $filesystem !== null && $filesystem->is_dir($directory['path'])) {
-                $filesystem->delete($directory['path'], true);
+            $owned = array(
+                self::DIRECTORY => array(self::FILE_PATTERN, self::TEMPORARY_PATTERN),
+                self::LEGACY_DIRECTORY => array(self::LEGACY_FILE_PATTERN, self::LEGACY_TEMPORARY_PATTERN),
+            );
+            foreach ($owned as $name => $patterns) {
+                $directory = self::directory($name);
+                if ($directory !== null && $filesystem !== null && $filesystem->is_dir($directory['path'])) {
+                    self::remove_owned($filesystem, $directory['path'], $patterns);
+                }
             }
         } catch (\Throwable $e) {
             self::delete_options();
@@ -108,6 +205,8 @@ final class Fullmetrix_Local_Tracker {
 
     private static function delete_options() {
         delete_option(self::STATE_OPTION);
+        delete_option(self::LEGACY_STATE_OPTION);
+        delete_option(FULLMETRIX_UPGRADE_PENDING_OPTION);
         delete_option(self::SCHEDULE_CHECK_OPTION);
         if (class_exists('Fullmetrix_Keeper')) {
             Fullmetrix_Keeper::uninstall();
@@ -151,8 +250,12 @@ final class Fullmetrix_Local_Tracker {
         }
 
         Fullmetrix_Keeper::store_from_bundle($data);
+        $state['key'] = isset($data['tagKey']) && is_string($data['tagKey']) && preg_match(self::TAG_KEY_PATTERN, $data['tagKey']) === 1 ? $data['tagKey'] : '';
+        $state['origin'] = isset($data['origin']) && is_string($data['origin']) ? self::accepted_send_origin($data['origin'], self::declared_domain()) : self::DEFAULT_ORIGIN;
 
-        if (!$local) {
+        if (!$local || (isset($data['local']) && $data['local'] === false)) {
+            $state['url'] = '';
+            $state['file'] = '';
             self::record_success($state);
             return;
         }
@@ -163,11 +266,10 @@ final class Fullmetrix_Local_Tracker {
             return;
         }
 
-        $file = 'fm-' . $bundle['version'] . '.js';
+        $file = $bundle['version'] . '.js';
         $path = $directory['path'] . '/' . $file;
 
         if ($state['file'] === $file && $state['url'] !== '' && $filesystem->exists($path)) {
-            $state['origin'] = $bundle['origin'];
             self::record_success($state);
             return;
         }
@@ -181,7 +283,6 @@ final class Fullmetrix_Local_Tracker {
         $state['url'] = $directory['url'] . '/' . $file;
         $state['file'] = $file;
         $state['version'] = $bundle['version'];
-        $state['origin'] = $bundle['origin'];
         $state['previous'] = is_string($previous) ? $previous : '';
         self::record_success($state);
         self::prune($filesystem, $directory['path'], array($file, $state['previous']));
@@ -194,7 +295,7 @@ final class Fullmetrix_Local_Tracker {
         }
 
         $base = rtrim(str_replace('/api/plugin', '', FULLMETRIX_API_BASE), '/');
-        $response = Fullmetrix_Http::request('GET', $base . '/api/tracker/bundle?key=' . rawurlencode($code), array(
+        $response = Fullmetrix_Http::request('GET', $base . '/api/tracker/bundle?key=' . rawurlencode($code) . '&contract=' . self::CONTRACT, array(
             'headers' => array('Accept' => 'application/json', 'X-Fullmetrix-Plugin-Version' => FULLMETRIX_VERSION),
             'redirection' => 0,
         ), self::TIMEOUT, Fullmetrix_Http::JOBS);
@@ -211,7 +312,6 @@ final class Fullmetrix_Local_Tracker {
         $version = isset($data['version']) && is_string($data['version']) ? $data['version'] : '';
         $sha256 = isset($data['sha256']) && is_string($data['sha256']) ? strtolower($data['sha256']) : '';
         $content = isset($data['content']) && is_string($data['content']) ? $data['content'] : '';
-        $origin = isset($data['origin']) && is_string($data['origin']) ? $data['origin'] : '';
 
         if (preg_match(self::VERSION_PATTERN, $version) !== 1 || preg_match('#^[a-f0-9]{64}$#', $sha256) !== 1) {
             return null;
@@ -219,14 +319,11 @@ final class Fullmetrix_Local_Tracker {
         if ($content === '' || strlen($content) > self::MAX_BYTES || !hash_equals($sha256, hash('sha256', $content))) {
             return null;
         }
-        if (preg_match(self::ORIGIN_PATTERN, $origin) !== 1) {
-            return null;
-        }
 
-        return array('version' => $version, 'content' => $content, 'origin' => $origin);
+        return array('version' => $version, 'content' => $content);
     }
 
-    private static function directory() {
+    private static function directory($name = self::DIRECTORY) {
         if (!function_exists('wp_upload_dir')) {
             return null;
         }
@@ -236,12 +333,12 @@ final class Fullmetrix_Local_Tracker {
             return null;
         }
 
-        $url = rtrim($uploads['baseurl'], '/') . '/' . self::DIRECTORY;
+        $url = rtrim($uploads['baseurl'], '/') . '/' . $name;
         if (strpos(home_url('/'), 'https://') === 0 && strpos($url, 'http://') === 0) {
             $url = 'https://' . substr($url, 7);
         }
 
-        return array('path' => rtrim($uploads['basedir'], '/\\') . '/' . self::DIRECTORY, 'url' => $url);
+        return array('path' => rtrim($uploads['basedir'], '/\\') . '/' . $name, 'url' => $url);
     }
 
     private static function filesystem() {
@@ -271,7 +368,7 @@ final class Fullmetrix_Local_Tracker {
             return false;
         }
 
-        foreach (array('index.php' => "<?php\n", 'index.html' => '') as $name => $body) {
+        foreach (self::INDEX_FILES as $name => $body) {
             if (!$filesystem->exists($path . '/' . $name)) {
                 $filesystem->put_contents($path . '/' . $name, $body, self::file_mode());
             }
@@ -309,12 +406,43 @@ final class Fullmetrix_Local_Tracker {
             if ($modified <= 0) {
                 continue;
             }
-            $stale_temporary = substr($name, -4) === '.tmp' && strpos($name, '.fm-') === 0 && $modified < $now - self::TEMPORARY_SECONDS;
+            $stale_temporary = preg_match(self::TEMPORARY_PATTERN, $name) === 1 && $modified < $now - self::TEMPORARY_SECONDS;
             $old_bundle = preg_match(self::FILE_PATTERN, $name) === 1 && !in_array($name, $keep, true) && $modified < $now - self::KEEP_SECONDS;
             if ($stale_temporary || $old_bundle) {
                 $filesystem->delete($path . '/' . $name);
             }
         }
+    }
+
+    private static function remove_owned($filesystem, $path, $patterns) {
+        $entries = $filesystem->dirlist($path, true, false);
+        if (!is_array($entries)) {
+            return;
+        }
+
+        $left = array();
+        foreach (array_keys($entries) as $name) {
+            $name = (string) $name;
+            if (preg_match($patterns[0], $name) === 1 || preg_match($patterns[1], $name) === 1) {
+                $filesystem->delete($path . '/' . $name);
+            } else {
+                $left[] = $name;
+            }
+        }
+
+        $indexes = self::INDEX_FILES;
+        if (array_diff($left, array_keys($indexes)) !== array()) {
+            return;
+        }
+        foreach ($left as $name) {
+            if ($filesystem->get_contents($path . '/' . $name) !== $indexes[$name]) {
+                return;
+            }
+        }
+        foreach ($left as $name) {
+            $filesystem->delete($path . '/' . $name);
+        }
+        $filesystem->delete($path);
     }
 
     private static function state() {
@@ -325,7 +453,8 @@ final class Fullmetrix_Local_Tracker {
             'url' => isset($state['url']) && is_string($state['url']) ? $state['url'] : '',
             'file' => isset($state['file']) && is_string($state['file']) ? $state['file'] : '',
             'version' => isset($state['version']) && is_string($state['version']) ? $state['version'] : '',
-            'origin' => isset($state['origin']) && is_string($state['origin']) ? $state['origin'] : '',
+            'origin' => isset($state['origin']) && is_string($state['origin']) ? $state['origin'] : self::DEFAULT_ORIGIN,
+            'key' => isset($state['key']) && is_string($state['key']) ? $state['key'] : '',
             'previous' => isset($state['previous']) && is_string($state['previous']) ? $state['previous'] : '',
             'failures' => isset($state['failures']) ? (int) $state['failures'] : 0,
             'retry_at' => isset($state['retry_at']) ? (int) $state['retry_at'] : 0,

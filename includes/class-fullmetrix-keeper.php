@@ -5,15 +5,15 @@ final class Fullmetrix_Keeper {
 
     const OPTION = 'fullmetrix_keeper';
     const CONFIG_OPTION = 'fullmetrix_plugin_config_last';
-    const QUERY = 'fm_keep';
-    const COOKIE = 'fm_vid';
+    const QUERY = 'kvo_k';
+    const LEGACY_QUERY = 'fm_keep';
+    const COOKIE = '_kvo_v';
+    const LEGACY_COOKIE = 'fm_vid';
     const DEFAULT_DAYS = 390;
     const MIN_DAYS = 1;
     const MAX_DAYS = 390;
     const BODY_LIMIT = 128;
     const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/';
-    const VALUE_PATTERN = '#^[A-Za-z0-9 _./-]{0,64}$#';
-    const ATTRIBUTES = array('type', 'data-cookieconsent', 'data-category', 'data-cookiescript', 'data-cmp-ab');
     const SKIPPED_CONTEXTS = array('DOING_AJAX', 'DOING_CRON', 'XMLRPC_REQUEST');
 
     public static function intercept() {
@@ -24,8 +24,14 @@ final class Fullmetrix_Keeper {
             }
         }
 
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- anonymous same-origin beacon that only re-sends the visitor's own cookie, checked against Sec-Fetch-Site and the body.
-        $query = isset($_GET[self::QUERY]) && is_string($_GET[self::QUERY]) ? array(self::QUERY => sanitize_text_field(wp_unslash($_GET[self::QUERY]))) : array();
+        $query = array();
+        foreach (array(self::QUERY, self::LEGACY_QUERY) as $name) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- anonymous same-origin beacon that only re-sends the visitor's own cookie, checked against Sec-Fetch-Site and the body.
+            if (isset($_GET[$name]) && is_string($_GET[$name])) {
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+                $query[$name] = sanitize_text_field(wp_unslash($_GET[$name]));
+            }
+        }
         $server = array(
             'REQUEST_METHOD' => isset($_SERVER['REQUEST_METHOD']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_METHOD'])) : '',
             'REQUEST_URI' => isset($_SERVER['REQUEST_URI']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI'])) : '',
@@ -51,7 +57,13 @@ final class Fullmetrix_Keeper {
         if (!isset($server['REQUEST_METHOD']) || $server['REQUEST_METHOD'] !== 'POST') {
             return false;
         }
-        if (!isset($query[self::QUERY]) || $query[self::QUERY] !== '1') {
+        $flagged = false;
+        foreach (array(self::QUERY, self::LEGACY_QUERY) as $name) {
+            if (isset($query[$name]) && $query[$name] === '1') {
+                $flagged = true;
+            }
+        }
+        if (!$flagged) {
             return false;
         }
 
@@ -69,19 +81,37 @@ final class Fullmetrix_Keeper {
         }
 
         $cookie = isset($server['HTTP_COOKIE']) ? (string) $server['HTTP_COOKIE'] : '';
-        if (preg_match_all('/(?:^|;)\s*' . self::COOKIE . '=([^;]*)/', $cookie, $matches) !== 1) {
+        $fresh = self::cookie_values($cookie, self::COOKIE);
+        $legacy = self::cookie_values($cookie, self::LEGACY_COOKIE);
+        if (count($fresh) > 1 || count($legacy) > 1 || (count($fresh) === 0 && count($legacy) === 0)) {
             return self::refusal(400);
         }
 
-        $value = $matches[1][0];
+        $value = count($fresh) === 1 ? $fresh[0] : $legacy[0];
         if (preg_match(self::UUID_PATTERN, $value) !== 1 || call_user_func($read_body) !== $value) {
             return self::refusal(400);
         }
 
         $headers = self::base_headers('1');
-        $headers[] = 'Set-Cookie: ' . self::COOKIE . '=' . $value . '; Max-Age=' . ((int) $config['maxAgeDays'] * 86400) . '; Path=/; SameSite=Lax' . ($https ? '; Secure' : '');
+        $headers[] = 'X-Kvo-K: 1';
+        $suffix = '=' . $value . '; Max-Age=' . ((int) $config['maxAgeDays'] * 86400) . '; Path=/; SameSite=Lax' . ($https ? '; Secure' : '');
+        $headers[] = 'Set-Cookie: ' . self::COOKIE . $suffix;
+        if (count($legacy) === 1 && $legacy[0] === $value) {
+            $headers[] = 'Set-Cookie: ' . self::LEGACY_COOKIE . $suffix;
+        }
 
         return array('status' => 204, 'headers' => $headers);
+    }
+
+    private static function cookie_values($header, $name) {
+        $values = array();
+        foreach (explode(';', $header) as $pair) {
+            $parts = explode('=', $pair, 2);
+            if (trim($parts[0]) === $name) {
+                $values[] = isset($parts[1]) ? trim($parts[1]) : '';
+            }
+        }
+        return $values;
     }
 
     public static function read_body() {
@@ -119,11 +149,7 @@ final class Fullmetrix_Keeper {
             $next['maxAgeDays'] = self::days(isset($data['keeper']['maxAgeDays']) ? $data['keeper']['maxAgeDays'] : null);
         }
 
-        if (isset($data['tagAttributes']) && is_array($data['tagAttributes'])) {
-            $next['tagAttributes'] = self::attributes($data['tagAttributes']);
-        }
-
-        if ($next !== $current || !is_array($stored)) {
+        if (!is_array($stored) || $stored !== $next) {
             update_option(self::OPTION, $next, true);
         }
     }
@@ -131,27 +157,6 @@ final class Fullmetrix_Keeper {
     public static function path() {
         $config = self::config();
         return $config['enabled'] ? self::home_path() . '?' . self::QUERY . '=1' : null;
-    }
-
-    public static function tag_attributes() {
-        $config = self::config();
-        $path = self::path();
-        $attributes = $path !== null ? ' data-fm-keeper="' . esc_attr($path) . '"' : '';
-
-        foreach ($config['tagAttributes'] as $name => $value) {
-            $attributes .= ' ' . $name . '="' . esc_attr($value) . '"';
-        }
-
-        return $attributes;
-    }
-
-    public static function prepare_tag($tag) {
-        $config = self::config();
-        if (!isset($config['tagAttributes']['type'])) {
-            return $tag;
-        }
-
-        return preg_replace('/\stype=(["\'])[^"\']*\1/', '', $tag, 1);
     }
 
     public static function uninstall() {
@@ -162,7 +167,6 @@ final class Fullmetrix_Keeper {
         return array(
             'enabled' => isset($stored['enabled']) && is_bool($stored['enabled']) ? $stored['enabled'] : true,
             'maxAgeDays' => self::days(isset($stored['maxAgeDays']) ? $stored['maxAgeDays'] : null),
-            'tagAttributes' => self::attributes(isset($stored['tagAttributes']) && is_array($stored['tagAttributes']) ? $stored['tagAttributes'] : array()),
         );
     }
 
@@ -172,16 +176,6 @@ final class Fullmetrix_Keeper {
         }
 
         return max(self::MIN_DAYS, min(self::MAX_DAYS, (int) $value));
-    }
-
-    private static function attributes($candidates) {
-        $attributes = array();
-        foreach (self::ATTRIBUTES as $name) {
-            if (isset($candidates[$name]) && is_string($candidates[$name]) && preg_match(self::VALUE_PATTERN, $candidates[$name]) === 1) {
-                $attributes[$name] = $candidates[$name];
-            }
-        }
-        return $attributes;
     }
 
     private static function home_path() {
