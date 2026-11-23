@@ -1,5 +1,5 @@
 {
-  "version": "1.13.0",
+  "version": "1.13.1",
   "minimumRequired": "1.0.0",
-  "changelog": "Balise de mesure neutre : le script est chargé par une balise sans marque (clé opaque, attributs data-kvo), servi depuis wp-content/uploads/kvo/ et, à défaut, depuis https://fullmetrix.com/assets/js/s.js. Le point cookie répond sur /?kvo_k=1 (l'ancien /?fm_keep=1 reste accepté), lit le cookie _kvo_v puis fm_vid et repose les deux noms quand les deux sont présents. La case de consentement marketing au paiement et les événements panier envoyés par le serveur sont retirés ; l'identification à la connexion et à la commande reste. Les attributs d'exclusion des extensions de cache sont posés sur la balise."
+  "changelog": "Quand une variation change, seuls cette variation et son produit parent sont envoyés à Fullmetrix, au lieu du parent et de toutes ses variations. Les boutiques aux gros produits variables (promotions programmées, Black Friday) ne saturent plus la file des tâches de fond de WooCommerce."
 }

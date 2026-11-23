@@ -4,7 +4,7 @@ Tags: woocommerce, woocommerce analytics, woocommerce reports, ecommerce analyti
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.13.0
+Stable tag: 1.13.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -139,6 +139,9 @@ The measurement script sets first-party cookies on your store domain: `_kvo_v` (
 10. Ask your store data questions in Claude or ChatGPT
 
 == Changelog ==
+
+= 1.13.1 =
+* Fixed: when a variation changes, only that variation and its parent product are sent to Fullmetrix, instead of the parent and all its variations. Stores with large variable products (scheduled sales, Black Friday) no longer fill the WooCommerce background queue
 
 = 1.13.0 =
 * Changed: the measurement script is loaded by a neutral tag (opaque key, `data-kvo` attributes, no brand name in the page), saved in `wp-content/uploads/kvo/` and loaded from `https://fullmetrix.com/assets/js/s.js` when the file is missing

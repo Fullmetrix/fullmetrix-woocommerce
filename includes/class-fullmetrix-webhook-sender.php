@@ -12,9 +12,19 @@ class Fullmetrix_Webhook_Sender {
     const MAX_RETRIES = 12;
     const BACKLOG_OPTION = 'fullmetrix_webhook_backlog';
     const BACKLOG_LIMIT = 2000;
+    const SOLO_SUFFIX = ':solo';
 
     /** @var array<string, true> */
     private static $queue = array();
+
+    /** @var array<int, true> */
+    private static $synced_parents = array();
+
+    /** @var array<int, true> */
+    private static $edited_products = array();
+
+    /** @var array<int, true> */
+    private static $syncing_parents = array();
 
     /** @var bool */
     private static $shutdown_registered = false;
@@ -36,8 +46,9 @@ class Fullmetrix_Webhook_Sender {
 
         add_action('woocommerce_update_product', array(__CLASS__, 'on_product'), 10, 1);
         add_action('woocommerce_new_product', array(__CLASS__, 'on_product'), 10, 1);
-        add_action('woocommerce_update_product_variation', array(__CLASS__, 'on_product'), 10, 1);
-        add_action('woocommerce_new_product_variation', array(__CLASS__, 'on_product'), 10, 1);
+        add_action('woocommerce_update_product_variation', array(__CLASS__, 'on_product_variation'), 10, 2);
+        add_action('woocommerce_new_product_variation', array(__CLASS__, 'on_product_variation'), 10, 2);
+        add_action('woocommerce_variable_product_sync_data', array(__CLASS__, 'on_variable_sync'), 10, 1);
 
         add_action('woocommerce_new_coupon', array(__CLASS__, 'on_coupon'), 10, 1);
         add_action('woocommerce_update_coupon', array(__CLASS__, 'on_coupon'), 10, 1);
@@ -68,6 +79,42 @@ class Fullmetrix_Webhook_Sender {
 
     public static function on_product($product_id) {
         self::enqueue('product', $product_id);
+        if (!is_scalar($product_id) || (int) $product_id <= 0) {
+            return;
+        }
+
+        $id = (int) $product_id;
+        if (isset(self::$syncing_parents[$id])) {
+            unset(self::$syncing_parents[$id]);
+            return;
+        }
+        self::$edited_products[$id] = true;
+    }
+
+    public static function on_variable_sync($product) {
+        try {
+            $id = is_object($product) && method_exists($product, 'get_id') ? (int) $product->get_id() : 0;
+            if ($id > 0) {
+                self::$syncing_parents[$id] = true;
+            }
+        } catch (\Throwable $e) {
+            return;
+        }
+    }
+
+    public static function on_product_variation($variation_id, $variation = null) {
+        self::enqueue('product', $variation_id);
+
+        try {
+            $parent_id = is_object($variation) && method_exists($variation, 'get_parent_id')
+                ? $variation->get_parent_id()
+                : (function_exists('wp_get_post_parent_id') ? wp_get_post_parent_id($variation_id) : 0);
+            if ((int) $parent_id > 0) {
+                self::$synced_parents[(int) $parent_id] = true;
+            }
+        } catch (\Throwable $e) {
+            return;
+        }
     }
 
     public static function on_coupon($coupon_id) {
@@ -112,8 +159,8 @@ class Fullmetrix_Webhook_Sender {
                 return;
             }
 
-            $keys = array_values(array_unique(array_merge($backlog, array_keys(self::$queue))));
-            self::$queue = array();
+            $keys = array_values(array_unique(array_merge($backlog, self::queued_keys())));
+            self::reset_queue();
             if (!empty($backlog)) {
                 update_option(self::BACKLOG_OPTION, array(), true);
             }
@@ -134,8 +181,15 @@ class Fullmetrix_Webhook_Sender {
             );
             self::store_backlog(array_slice($unscheduled, self::FALLBACK_LIMIT));
         } catch (\Throwable $e) {
-            self::$queue = array();
+            self::reset_queue();
         }
+    }
+
+    private static function reset_queue() {
+        self::$queue = array();
+        self::$synced_parents = array();
+        self::$edited_products = array();
+        self::$syncing_parents = array();
     }
 
     public static function process_scheduled($keys, $attempt = 0) {
@@ -253,18 +307,36 @@ class Fullmetrix_Webhook_Sender {
         return $chunks;
     }
 
+    private static function queued_keys() {
+        $keys = array();
+        foreach (array_keys(self::$queue) as $key) {
+            $entry = self::parse_key($key);
+            $solo = $entry !== null
+                && $entry['type'] === 'product'
+                && isset(self::$synced_parents[$entry['id']])
+                && !isset(self::$edited_products[$entry['id']]);
+            $keys[] = $solo ? $key . self::SOLO_SUFFIX : $key;
+        }
+
+        return $keys;
+    }
+
     private static function parse_key($key) {
-        $parts = is_string($key) ? explode(':', $key, 2) : array();
-        if (count($parts) !== 2 || (int) $parts[1] <= 0) {
+        $parts = is_string($key) ? explode(':', $key, 3) : array();
+        if (count($parts) < 2 || (int) $parts[1] <= 0) {
             return null;
         }
 
-        return array('type' => $parts[0], 'id' => (int) $parts[1]);
+        return array(
+            'type' => $parts[0],
+            'id' => (int) $parts[1],
+            'solo' => isset($parts[2]) && ':' . $parts[2] === self::SOLO_SUFFIX,
+        );
     }
 
     private static function expand_key($entry) {
-        $entries = array($entry);
-        if ($entry['type'] !== 'product' || !function_exists('wc_get_product')) {
+        $entries = array(array('type' => $entry['type'], 'id' => $entry['id']));
+        if ($entry['type'] !== 'product' || $entry['solo'] || !function_exists('wc_get_product')) {
             return $entries;
         }
 
